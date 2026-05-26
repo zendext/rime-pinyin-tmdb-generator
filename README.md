@@ -71,6 +71,8 @@ path = "/path/to/series.sqlite"
 
 `bootstrap.mode = "full"` 是默认模式，会下载 TMDb Daily ID Export，并只处理 `popularity >= min_popularity` 的非成人 TV series，默认阈值是 `10`。通过过滤后，才会按 ID 逐个请求 `/tv/{id}/translations`。`50ms` 等于 20 rps；一次请求会返回所有配置语言的翻译，所以不会因为配置多个语言而成倍增加请求数。运行状态和进度都保存在 SQLite store 里，遇到中断或 429 后下次运行会从 cursor 继续。
 
+流行度阈值只在 full 扫描 Daily Export 时生效。断点续传保存的是 export 文件的 cursor，不会保存当时的 `min_popularity`，所以不要在同一个未完成的 full bootstrap 中途修改这个值：调低阈值不会自动回头补抓之前已跳过的条目，调高阈值也不会自动删除已经写入 SQLite store 的条目。需要更换阈值时，建议使用新的 store 或清理对应 export 的 bootstrap 进度后重新跑。
+
 如果要改成 popular 模式，可以配置：
 
 ```toml

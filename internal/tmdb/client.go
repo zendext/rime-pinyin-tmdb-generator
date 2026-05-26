@@ -224,22 +224,33 @@ func (c *Client) consumeExport(ctx context.Context, db *store.DB, exportDate str
 		return err
 	}
 	defer gz.Close()
-	scanner := bufio.NewScanner(gz)
+	items, stats, err := c.readExportItems(gz)
+	if err != nil {
+		return err
+	}
+	c.logf(
+		"full bootstrap export_stats export=%s total=%d fetchable=%d remaining_fetchable=%d skipped=%d adult=%d invalid=%d below_min_popularity=%d min_popularity=%g",
+		exportDate,
+		stats.Total,
+		stats.Fetchable,
+		c.remainingFetchableItems(items, cursor),
+		stats.Skipped(),
+		stats.Adult,
+		stats.Invalid,
+		stats.BelowMinPopularity,
+		c.MinPopularity,
+	)
 	processedItems := 0
 	skippedItems := 0
 	lastCursor := cursor
 	persistedCursor := cursor
-	for offset := 0; scanner.Scan(); offset++ {
+	for offset, item := range items {
 		if offset < cursor {
 			continue
 		}
-		var item exportSeries
-		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
-			return err
-		}
 		nextCursor := offset + 1
 		lastCursor = nextCursor
-		if item.Adult || item.ID <= 0 || (c.MinPopularity > 0 && item.Popularity < c.MinPopularity) {
+		if c.shouldSkipExportItem(item) {
 			skippedItems++
 			if err := db.SetBootstrap(exportDate, nextCursor, false); err != nil {
 				return err
@@ -277,11 +288,68 @@ func (c *Client) consumeExport(ctx context.Context, db *store.DB, exportDate str
 		}
 		c.wait(ctx)
 	}
-	if err := scanner.Err(); err != nil {
-		return err
-	}
 	c.logf("full bootstrap completed export=%s cursor=%d processed=%d skipped=%d", exportDate, lastCursor, processedItems, skippedItems)
 	return db.SetBootstrap(exportDate, lastCursor, true)
+}
+
+type exportStats struct {
+	Total              int
+	Fetchable          int
+	Adult              int
+	Invalid            int
+	BelowMinPopularity int
+}
+
+func (s exportStats) Skipped() int {
+	return s.Adult + s.Invalid + s.BelowMinPopularity
+}
+
+func (c *Client) readExportItems(r io.Reader) ([]exportSeries, exportStats, error) {
+	scanner := bufio.NewScanner(r)
+	var items []exportSeries
+	var stats exportStats
+	for scanner.Scan() {
+		var item exportSeries
+		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
+			return nil, exportStats{}, err
+		}
+		items = append(items, item)
+		stats.Total++
+		switch {
+		case item.ID <= 0:
+			stats.Invalid++
+		case item.Adult:
+			stats.Adult++
+		case c.MinPopularity > 0 && item.Popularity < c.MinPopularity:
+			stats.BelowMinPopularity++
+		default:
+			stats.Fetchable++
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, exportStats{}, err
+	}
+	return items, stats, nil
+}
+
+func (c *Client) remainingFetchableItems(items []exportSeries, cursor int) int {
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(items) {
+		return 0
+	}
+	remaining := 0
+	for _, item := range items[cursor:] {
+		if !c.shouldSkipExportItem(item) {
+			remaining++
+		}
+	}
+	return remaining
+}
+
+func (c *Client) shouldSkipExportItem(item exportSeries) bool {
+	return item.Adult || item.ID <= 0 || (c.MinPopularity > 0 && item.Popularity < c.MinPopularity)
 }
 
 func (c *Client) fetchSeriesTranslationsByID(ctx context.Context, id int) (SeriesRecord, error) {

@@ -136,6 +136,7 @@ func TestClientFullBootstrapLogsProgress(t *testing.T) {
 	for _, want := range []string{
 		"full bootstrap export=05_26_2026 cursor=0 completed=false",
 		"full bootstrap download export=05_26_2026",
+		"full bootstrap export_stats export=05_26_2026 total=101 fetchable=101 remaining_fetchable=101 skipped=0 adult=0 invalid=0 below_min_popularity=0 min_popularity=0",
 		"full bootstrap progress export=05_26_2026 cursor=100 processed=100",
 		"full bootstrap completed export=05_26_2026 cursor=101 processed=101 skipped=0",
 	} {
@@ -238,6 +239,64 @@ func TestClientFullBootstrapSkipsItemsBelowMinPopularity(t *testing.T) {
 	wantPaths := []string{"/p/exports/tv_series_ids_05_26_2026.json.gz", "/3/tv/102/translations"}
 	if !reflect.DeepEqual(paths, wantPaths) {
 		t.Fatalf("unexpected paths: %#v", paths)
+	}
+}
+
+func TestClientFullBootstrapLogsFetchableItemCounts(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "series.sqlite")
+	db, err := store.Open(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetBootstrap("05_26_2026", 2, false); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/p/exports/tv_series_ids_05_26_2026.json.gz":
+			w.Header().Set("Content-Type", "application/gzip")
+			gz := gzip.NewWriter(w)
+			fmt.Fprintln(gz, `{"id":0,"popularity":100,"adult":false}`)
+			fmt.Fprintln(gz, `{"id":101,"popularity":1,"adult":true}`)
+			fmt.Fprintln(gz, `{"id":102,"popularity":9.9,"adult":false}`)
+			fmt.Fprintln(gz, `{"id":103,"popularity":10,"adult":false}`)
+			fmt.Fprintln(gz, `{"id":104,"popularity":20,"adult":false}`)
+			if err := gz.Close(); err != nil {
+				t.Fatal(err)
+			}
+		case "/3/tv/103/translations", "/3/tv/104/translations":
+			writeJSON(t, w, translationPayload(pathID(t, r.URL.Path), "达标剧集"))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	var logs bytes.Buffer
+	client := &Client{
+		BaseURL:         server.URL + "/3",
+		APIKey:          "test-key",
+		Languages:       []string{"zh-CN"},
+		HTTP:            server.Client(),
+		BootstrapMode:   "full",
+		ExportBaseURL:   server.URL + "/p/exports",
+		ExportDate:      "05_26_2026",
+		StorePath:       storePath,
+		RequestInterval: 0,
+		MinPopularity:   10,
+		Logf: func(format string, args ...any) {
+			fmt.Fprintf(&logs, format+"\n", args...)
+		},
+	}
+
+	if _, err := client.FetchSeries(context.Background(), time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	want := "full bootstrap export_stats export=05_26_2026 total=5 fetchable=2 remaining_fetchable=2 skipped=3 adult=1 invalid=1 below_min_popularity=1 min_popularity=10"
+	if !strings.Contains(logs.String(), want) {
+		t.Fatalf("expected log %q in:\n%s", want, logs.String())
 	}
 }
 

@@ -218,6 +218,16 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 	if !strings.Contains(readme, "min_popularity = 10") || !strings.Contains(readme, "popularity >= min_popularity") {
 		t.Fatal("README should document full min_popularity filtering")
 	}
+	for _, want := range []string{
+		"流行度阈值",
+		"不要在同一个未完成的 full bootstrap 中途修改",
+		"不会自动回头补抓",
+		"不会自动删除",
+	} {
+		if !strings.Contains(readme, want) {
+			t.Fatalf("README should document popularity threshold caveat %q", want)
+		}
+	}
 	if !strings.Contains(readme, `request_interval = "50ms"`) || !strings.Contains(readme, "`50ms` 等于 20 rps") {
 		t.Fatal("README should document the default request interval")
 	}
