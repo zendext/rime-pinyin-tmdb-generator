@@ -64,6 +64,43 @@ func TestRunStatusReportsFullBootstrapIncomplete(t *testing.T) {
 	}
 }
 
+func TestRunStatusReportsEarliestIncompleteBootstrap(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	storePath := filepath.Join(dir, "series.sqlite")
+	configData := []byte("[tmdb]\napi_key = \"test\"\n[store]\npath = \"" + storePath + "\"\n")
+	if err := os.WriteFile(configPath, configData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	db, err := store.Open(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetBootstrap("05_25_2026", 15923, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetBootstrap("05_26_2026", 108, false); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"status", "--config", configPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d: %s", code, stderr.String())
+	}
+	out := stdout.String()
+	for _, want := range []string{
+		"bootstrap_export_date=05_25_2026",
+		"bootstrap_cursor=15923",
+		"bootstrap_completed=false",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in status output:\n%s", want, out)
+		}
+	}
+}
+
 func TestRunStatusReportsUnknownBootstrapModeNotTimerReady(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
@@ -176,7 +213,36 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 	if strings.Contains(readme, "[store]\npath = \"~/.local/state/rime-pinyin-tmdb-generator/series.sqlite\"") {
 		t.Fatal("README default config should rely on the default store path")
 	}
-	if !strings.Contains(readme, "SQLite store 默认写到") {
-		t.Fatal("README should document the default store path")
+	for _, want := range []string{
+		"SQLite store 默认按模式分开",
+		"series-popular.sqlite",
+		"series-full.sqlite",
+		"同时保留两种模式的进度和增量时间线",
+	} {
+		if !strings.Contains(readme, want) {
+			t.Fatalf("README should document mode-specific default store path %q", want)
+		}
+	}
+	for _, want := range []string{
+		"tmdb_popular_hans.dict.yaml",
+		"tmdb_popular_hant.dict.yaml",
+		"tmdb_full_hans.dict.yaml",
+		"tmdb_full_hant.dict.yaml",
+		"tmdb_popular_hans",
+		"tmdb_full_hans",
+	} {
+		if !strings.Contains(readme, want) {
+			t.Fatalf("README should document mode-specific dictionary name %q", want)
+		}
+	}
+	for _, stale := range []string{
+		"`tmdb_hans.dict.yaml`",
+		"`tmdb_hant.dict.yaml`",
+		"- tmdb_hans",
+		"- tmdb_hant",
+	} {
+		if strings.Contains(readme, stale) {
+			t.Fatalf("README should not document stale shared dictionary name %q", stale)
+		}
 	}
 }

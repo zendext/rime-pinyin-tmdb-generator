@@ -94,7 +94,7 @@ func ExtractChineseTitleGroups(records []SeriesRecord, groups []TitleGroup) []Ti
 		out = append(out, TitleGroup{
 			Name:      group.Name,
 			Languages: append([]string(nil), group.Languages...),
-			Titles:    extractChineseTitles(records, group.Languages, group.Name == "tmdb_hans", false),
+			Titles:    extractChineseTitles(records, group.Languages, strings.HasSuffix(group.Name, "_hans"), false),
 		})
 	}
 	return out

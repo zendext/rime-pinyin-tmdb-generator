@@ -133,7 +133,11 @@ func (c *Client) fetchFullBootstrap(ctx context.Context, since time.Time) ([]Ser
 	}
 	defer db.Close()
 
-	for _, exportDate := range c.exportDates() {
+	exportDates, err := c.fullBootstrapExportDates(db)
+	if err != nil {
+		return nil, err
+	}
+	for _, exportDate := range exportDates {
 		cursor, completed, err := db.Bootstrap(exportDate)
 		if err != nil {
 			return nil, err
@@ -155,6 +159,20 @@ func (c *Client) fetchFullBootstrap(ctx context.Context, since time.Time) ([]Ser
 		return c.recordsFromStore(db)
 	}
 	return nil, errExportNotFound
+}
+
+func (c *Client) fullBootstrapExportDates(db *store.DB) ([]string, error) {
+	if c.ExportDate != "" {
+		return []string{c.ExportDate}, nil
+	}
+	incomplete, ok, err := db.EarliestIncompleteBootstrap()
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		return []string{incomplete.ExportDate}, nil
+	}
+	return c.exportDates(), nil
 }
 
 func (c *Client) refreshChangedSeries(ctx context.Context, db *store.DB, since time.Time) error {

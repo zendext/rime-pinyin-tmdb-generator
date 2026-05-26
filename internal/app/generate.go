@@ -19,6 +19,7 @@ type Fetcher interface {
 type Options struct {
 	StorePath string
 	DictPath  string
+	Mode      string
 	Languages []string
 	Fetcher   Fetcher
 	Encoder   rime.Encoder
@@ -56,7 +57,7 @@ func Generate(ctx context.Context, opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	groups := tmdb.ExtractChineseTitleGroups(records, dictionaryGroups())
+	groups := tmdb.ExtractChineseTitleGroups(records, dictionaryGroups(opts.Mode))
 	dictPaths := make([]string, 0, len(groups))
 	totalEntries := 0
 	for _, group := range groups {
@@ -102,11 +103,20 @@ func atomicWrite(path string, data []byte, perm os.FileMode) error {
 	return os.Rename(tmp, path)
 }
 
-func dictionaryGroups() []tmdb.TitleGroup {
+func dictionaryGroups(mode string) []tmdb.TitleGroup {
+	prefix := dictionaryPrefix(mode)
 	return []tmdb.TitleGroup{
-		{Name: "tmdb_hans", Languages: []string{"zh-CN"}},
-		{Name: "tmdb_hant", Languages: []string{"zh-TW", "zh-HK"}},
+		{Name: prefix + "_hans", Languages: []string{"zh-CN"}},
+		{Name: prefix + "_hant", Languages: []string{"zh-TW", "zh-HK"}},
 	}
+}
+
+func dictionaryPrefix(mode string) string {
+	mode = strings.TrimSpace(mode)
+	if mode == "" {
+		mode = "popular"
+	}
+	return "tmdb_" + mode
 }
 
 func dictionaryPath(basePath, name string) string {

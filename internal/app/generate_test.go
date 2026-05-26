@@ -48,11 +48,11 @@ func TestGenerateWritesDictionaryAndAdvancesStateAfterSuccess(t *testing.T) {
 	if result.EntryCount != 1 {
 		t.Fatalf("expected 1 entry, got %d", result.EntryCount)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "tmdb_hans.dict.yaml"))
+	data, err := os.ReadFile(filepath.Join(dir, "tmdb_popular_hans.dict.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "name: tmdb_hans") {
+	if !strings.Contains(string(data), "name: tmdb_popular_hans") {
 		t.Fatalf("generated dictionary has wrong name:\n%s", data)
 	}
 	if !strings.Contains(string(data), "虚构剧集\txu gou ju ji\t90") {
@@ -107,18 +107,51 @@ func TestGenerateWritesSeparateHansAndHantDictionaries(t *testing.T) {
 		t.Fatalf("expected 2 entries, got %d", result.EntryCount)
 	}
 
-	hansData := mustReadFile(t, filepath.Join(dir, "tmdb_hans.dict.yaml"))
-	mustContainText(t, hansData, "name: tmdb_hans")
+	hansData := mustReadFile(t, filepath.Join(dir, "tmdb_popular_hans.dict.yaml"))
+	mustContainText(t, hansData, "name: tmdb_popular_hans")
 	mustContainText(t, hansData, "虚构剧集\txu gou ju ji\t100")
 	mustNotContainText(t, hansData, "新加坡译名")
 	mustNotContainText(t, hansData, "虛構劇集")
 	mustNotContainText(t, hansData, "Unlabeled Alias")
 
-	hantData := mustReadFile(t, filepath.Join(dir, "tmdb_hant.dict.yaml"))
-	mustContainText(t, hantData, "name: tmdb_hant")
+	hantData := mustReadFile(t, filepath.Join(dir, "tmdb_popular_hant.dict.yaml"))
+	mustContainText(t, hantData, "name: tmdb_popular_hant")
 	mustContainText(t, hantData, "虛構劇集\txu gou ju ji\t100")
 	mustNotContainText(t, hantData, "虚构剧集")
 	mustNotContainText(t, hantData, "Unlabeled Alias")
+}
+
+func TestGenerateUsesModeSpecificDictionaryNames(t *testing.T) {
+	dir := t.TempDir()
+	storePath := filepath.Join(dir, "series.sqlite")
+	outputPath := filepath.Join(dir, "tmdb.dict.yaml")
+	fetcher := &fakeFetcher{records: []tmdb.SeriesRecord{{
+		ID:   1,
+		Name: "虚构剧集",
+	}}}
+
+	result, err := Generate(context.Background(), Options{
+		StorePath: storePath,
+		DictPath:  outputPath,
+		Mode:      "full",
+		Fetcher:   fetcher,
+		Encoder: fakeEncoder{
+			"虚构剧集": "xu gou ju ji",
+		},
+		Now: func() time.Time { return time.Date(2026, 5, 26, 12, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.DictPaths) != 2 {
+		t.Fatalf("expected 2 dict paths, got %#v", result.DictPaths)
+	}
+	hansPath := filepath.Join(dir, "tmdb_full_hans.dict.yaml")
+	if result.DictPaths[0] != hansPath {
+		t.Fatalf("expected first dict path %q, got %#v", hansPath, result.DictPaths)
+	}
+	hansData := mustReadFile(t, hansPath)
+	mustContainText(t, hansData, "name: tmdb_full_hans")
 }
 
 func TestGenerateUsesLastSuccessfulFetchAtFromSQLiteStore(t *testing.T) {

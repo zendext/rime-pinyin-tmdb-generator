@@ -81,10 +81,17 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	fmt.Fprintf(stdout, "store_series=%d\n", count)
-	bootstrap, ok, err := db.LatestBootstrap()
+	bootstrap, ok, err := db.EarliestIncompleteBootstrap()
 	if err != nil {
 		fmt.Fprintf(stderr, "load bootstrap status: %v\n", err)
 		return 1
+	}
+	if !ok {
+		bootstrap, ok, err = db.LatestBootstrap()
+		if err != nil {
+			fmt.Fprintf(stderr, "load bootstrap status: %v\n", err)
+			return 1
+		}
 	}
 	timerReady := false
 	if ok {
@@ -114,7 +121,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	baseURL := fs.String("base-url", "", "TMDb API base URL")
 	languages := fs.String("languages", "", "comma-separated TMDb language codes")
 	bootstrapMode := fs.String("bootstrap-mode", "", "bootstrap mode: popular or full")
-	storePath := fs.String("store", "", "SQLite store path for full bootstrap")
+	storePath := fs.String("store", "", "SQLite store path")
 	exportDate := fs.String("export-date", "", "TMDb daily export date in MM_DD_YYYY")
 	requestInterval := fs.Duration("request-interval", 0, "minimum interval between full bootstrap API requests")
 	maxItems := fs.Int("max-items", 0, "maximum full bootstrap items to process in this run")
@@ -148,6 +155,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	}
 	if *storePath != "" {
 		cfg.Store.Path = *storePath
+		cfg.Store.PathExplicit = true
 	}
 	if *exportDate != "" {
 		cfg.Bootstrap.ExportDate = *exportDate
@@ -161,6 +169,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	if *redeploy != "" {
 		cfg.Rime.RedeployCommand = *redeploy
 	}
+	config.ApplyModeDefaults(&cfg)
 
 	l, err := lock.Acquire(cfg.Output.LockPath)
 	if err != nil {
@@ -198,6 +207,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	result, err := app.Generate(ctx, app.Options{
 		StorePath: cfg.Store.Path,
 		DictPath:  cfg.Output.DictPath,
+		Mode:      cfg.Bootstrap.Mode,
 		Languages: cfg.TMDB.Languages,
 		Fetcher:   client,
 		Encoder:   pinyin.NewEncoder(),
@@ -227,7 +237,7 @@ func popularSources(cfg config.PopularConfig) []tmdb.PopularSource {
 
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "usage: rime-pinyin-tmdb-generator <generate|status|version>")
-	fmt.Fprintln(w, "  generate  fetch TMDb metadata locally and write tmdb_hans/tmdb_hant dictionaries")
+	fmt.Fprintln(w, "  generate  fetch TMDb metadata locally and write mode-specific dictionaries")
 	fmt.Fprintln(w, "  status    print local bootstrap and dictionary status")
 	fmt.Fprintln(w, "  version   print version")
 }

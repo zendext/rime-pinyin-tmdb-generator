@@ -79,6 +79,58 @@ func TestLoadUsesPopularBootstrapPageConfig(t *testing.T) {
 	}
 }
 
+func TestLoadUsesModeSpecificDefaultStorePaths(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateDir)
+
+	popularConfigPath := filepath.Join(t.TempDir(), "popular.toml")
+	if err := os.WriteFile(popularConfigPath, []byte("[bootstrap]\nmode = \"popular\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	popular, err := Load(popularConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	popularWant := filepath.Join(stateDir, "rime-pinyin-tmdb-generator", "series-popular.sqlite")
+	if popular.Store.Path != popularWant {
+		t.Fatalf("expected popular default store %q, got %q", popularWant, popular.Store.Path)
+	}
+
+	fullConfigPath := filepath.Join(t.TempDir(), "full.toml")
+	if err := os.WriteFile(fullConfigPath, []byte("[bootstrap]\nmode = \"full\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	full, err := Load(fullConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fullWant := filepath.Join(stateDir, "rime-pinyin-tmdb-generator", "series-full.sqlite")
+	if full.Store.Path != fullWant {
+		t.Fatalf("expected full default store %q, got %q", fullWant, full.Store.Path)
+	}
+}
+
+func TestApplyModeDefaultsUsesFinalModeUnlessStorePathIsExplicit(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateDir)
+
+	cfg := Default()
+	cfg.Bootstrap.Mode = "full"
+	ApplyModeDefaults(&cfg)
+	fullWant := filepath.Join(stateDir, "rime-pinyin-tmdb-generator", "series-full.sqlite")
+	if cfg.Store.Path != fullWant {
+		t.Fatalf("expected final full mode store %q, got %q", fullWant, cfg.Store.Path)
+	}
+
+	cfg.Store.Path = filepath.Join(stateDir, "custom.sqlite")
+	cfg.Store.PathExplicit = true
+	cfg.Bootstrap.Mode = "popular"
+	ApplyModeDefaults(&cfg)
+	if cfg.Store.Path != filepath.Join(stateDir, "custom.sqlite") {
+		t.Fatalf("expected explicit store path to be preserved, got %q", cfg.Store.Path)
+	}
+}
+
 func TestLoadUsesFullBootstrapAndStoreConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	data := []byte("[store]\npath = \"~/state/series.sqlite\"\n[bootstrap]\nmode = \"full\"\nexport_date = \"05_26_2026\"\nrequest_interval = \"200ms\"\nmax_items = 100\n")

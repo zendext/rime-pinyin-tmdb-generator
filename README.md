@@ -56,7 +56,12 @@ top_rated_pages = 10
 redeploy_command = ""
 ```
 
-SQLite store 默认写到 `~/.local/state/rime-pinyin-tmdb-generator/series.sqlite`，通常不需要配置。需要放到其他位置时，可以在配置里增加：
+SQLite store 默认按模式分开，通常不需要配置：
+
+- popular 模式：`~/.local/state/rime-pinyin-tmdb-generator/series-popular.sqlite`
+- full 模式：`~/.local/state/rime-pinyin-tmdb-generator/series-full.sqlite`
+
+这样可以同时保留两种模式的进度和增量时间线。需要放到其他位置时，可以在配置里增加：
 
 ```toml
 [store]
@@ -100,24 +105,26 @@ rime-pinyin-tmdb-generator generate \
 
 生成器会按 `dict_path` 所在目录写出词典：
 
-- `tmdb_hans.dict.yaml`：简体，来自 `zh-CN`
-- `tmdb_hant.dict.yaml`：繁体，来自 `zh-TW` / `zh-HK`
+- popular 模式：`tmdb_popular_hans.dict.yaml` / `tmdb_popular_hant.dict.yaml`
+- full 模式：`tmdb_full_hans.dict.yaml` / `tmdb_full_hant.dict.yaml`
 
-`dict_path` 只用于决定输出目录；文件名会自动派生为上面两个词典。
+`dict_path` 只用于决定输出目录；文件名会按当前 `bootstrap.mode` 自动派生。`hans` 为简体，来自 `zh-CN`；`hant` 为繁体，来自 `zh-TW` / `zh-HK`。
 
-简体用户在主 Rime 词典中引入：
-
-```yaml
-import_tables:
-  - tmdb_hans
-```
-
-繁体用户引入：
+popular 模式的简体用户在主 Rime 词典中引入：
 
 ```yaml
 import_tables:
-  - tmdb_hant
+  - tmdb_popular_hans
 ```
+
+popular 模式的繁体用户引入：
+
+```yaml
+import_tables:
+  - tmdb_popular_hant
+```
+
+full 模式则对应引入 `tmdb_full_hans` 或 `tmdb_full_hant`。
 
 工具会在 SQLite store 中保存运行状态，并用其中的时间戳进行后续增量更新。只有词典文件成功写入后，状态时间戳才会更新。
 
@@ -143,7 +150,7 @@ rime-pinyin-tmdb-generator.exe generate `
   --store "$env:LOCALAPPDATA\rime-pinyin-tmdb-generator\series.sqlite"
 ```
 
-无论在哪个平台，实际输出都会是同目录下的 `tmdb_hans.dict.yaml` 和 `tmdb_hant.dict.yaml`。
+无论在哪个平台，实际输出都会在同目录下按当前模式生成，例如 popular 模式为 `tmdb_popular_hans.dict.yaml` 和 `tmdb_popular_hant.dict.yaml`，full 模式为 `tmdb_full_hans.dict.yaml` 和 `tmdb_full_hant.dict.yaml`。
 
 ## 拼音修正
 
@@ -178,4 +185,4 @@ systemctl --user enable --now rime-pinyin-tmdb-generator-update.timer
 
 ## TMDb 使用说明
 
-TMDb API 可以免费用于非商业用途，但需要遵守 TMDb API Terms，包括标注 TMDb 来源、不得商业使用、不得长期缓存或再分发派生数据。这个工具只在用户本地生成词典；请不要把真实生成的 `tmdb_hans.dict.yaml` 或 `tmdb_hant.dict.yaml` 作为公开发布文件。
+TMDb API 可以免费用于非商业用途，但需要遵守 TMDb API Terms，包括标注 TMDb 来源、不得商业使用、不得长期缓存或再分发派生数据。这个工具只在用户本地生成词典；请不要把真实生成的 `tmdb_popular_hans.dict.yaml`、`tmdb_popular_hant.dict.yaml`、`tmdb_full_hans.dict.yaml` 或 `tmdb_full_hant.dict.yaml` 作为公开发布文件。

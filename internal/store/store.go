@@ -155,6 +155,29 @@ ON CONFLICT(export_date) DO UPDATE SET
 	return err
 }
 
+func (d *DB) EarliestIncompleteBootstrap() (BootstrapStatus, bool, error) {
+	row := d.db.QueryRow(`
+SELECT export_date, cursor_offset, completed, updated_at
+FROM bootstrap_state
+WHERE completed = 0
+ORDER BY substr(export_date, 7, 4), substr(export_date, 1, 2), substr(export_date, 4, 2)
+LIMIT 1
+`)
+	var status BootstrapStatus
+	var completedInt int
+	var updatedAtText string
+	if err := row.Scan(&status.ExportDate, &status.Cursor, &completedInt, &updatedAtText); err != nil {
+		if err == sql.ErrNoRows {
+			return BootstrapStatus{}, false, nil
+		}
+		return BootstrapStatus{}, false, err
+	}
+	updatedAt, _ := time.Parse(time.RFC3339Nano, updatedAtText)
+	status.Completed = completedInt != 0
+	status.UpdatedAt = updatedAt
+	return status, true, nil
+}
+
 func (d *DB) LatestBootstrap() (BootstrapStatus, bool, error) {
 	row := d.db.QueryRow(`
 SELECT export_date, cursor_offset, completed, updated_at

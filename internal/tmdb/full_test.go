@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/zendext/rime-pinyin-tmdb-generator/internal/store"
 )
 
 func TestClientFullBootstrapUsesDailyExportStoreAndTranslationsEndpoint(t *testing.T) {
@@ -189,5 +191,59 @@ func TestClientFullBootstrapLogsPauseAndSkippedItems(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected log %q in:\n%s", want, out)
 		}
+	}
+}
+
+func TestClientFullBootstrapResumesEarliestIncompleteExportBeforeTryingNewDates(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "series.sqlite")
+	db, err := store.Open(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetBootstrap("05_25_2026", 1, false); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		switch r.URL.Path {
+		case "/p/exports/tv_series_ids_05_25_2026.json.gz":
+			w.Header().Set("Content-Type", "application/gzip")
+			gz := gzip.NewWriter(w)
+			fmt.Fprintln(gz, `{"id":101,"popularity":1,"adult":false}`)
+			fmt.Fprintln(gz, `{"id":102,"popularity":1,"adult":false}`)
+			if err := gz.Close(); err != nil {
+				t.Fatal(err)
+			}
+		case "/3/tv/102/translations":
+			writeJSON(t, w, translationPayload(102, "续跑剧集"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := &Client{
+		BaseURL:         server.URL + "/3",
+		APIKey:          "test-key",
+		Languages:       []string{"zh-CN"},
+		HTTP:            server.Client(),
+		BootstrapMode:   "full",
+		ExportBaseURL:   server.URL + "/p/exports",
+		StorePath:       storePath,
+		RequestInterval: 0,
+	}
+
+	got, err := client.FetchSeries(context.Background(), time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != 102 {
+		t.Fatalf("expected resumed record 102, got %#v", got)
+	}
+	if len(paths) == 0 || paths[0] != "/p/exports/tv_series_ids_05_25_2026.json.gz" {
+		t.Fatalf("expected first request to resume incomplete export, got paths %#v", paths)
 	}
 }

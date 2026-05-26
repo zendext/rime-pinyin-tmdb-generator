@@ -32,7 +32,8 @@ type OutputConfig struct {
 }
 
 type StoreConfig struct {
-	Path string `toml:"path"`
+	Path         string `toml:"path"`
+	PathExplicit bool   `toml:"-"`
 }
 
 type BootstrapConfig struct {
@@ -70,7 +71,7 @@ func Default() Config {
 			LockPath: filepath.Join(baseState, "update.lock"),
 		},
 		Store: StoreConfig{
-			Path: filepath.Join(baseState, "series.sqlite"),
+			Path: filepath.Join(baseState, "series-popular.sqlite"),
 		},
 		Bootstrap: BootstrapConfig{
 			Mode:            "popular",
@@ -87,19 +88,31 @@ func DefaultPath() string {
 
 func Load(path string) (Config, error) {
 	cfg := Default()
+	storePathExplicit := false
 	if path == "" {
 		path = DefaultPath()
 	}
 	if _, err := os.Stat(path); err == nil {
-		if _, err := toml.DecodeFile(path, &cfg); err != nil {
+		meta, err := toml.DecodeFile(path, &cfg)
+		if err != nil {
 			return Config{}, err
 		}
+		storePathExplicit = meta.IsDefined("store", "path")
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return Config{}, err
 	}
+	cfg.Store.PathExplicit = storePathExplicit
 	applyEnv(&cfg)
+	ApplyModeDefaults(&cfg)
 	expandPaths(&cfg)
 	return cfg, nil
+}
+
+func ApplyModeDefaults(cfg *Config) {
+	if cfg.Store.PathExplicit {
+		return
+	}
+	cfg.Store.Path = defaultStorePath(cfg.Bootstrap.Mode)
 }
 
 func LoadOverrides(path string) (map[string]string, error) {
@@ -158,6 +171,16 @@ func expandPaths(cfg *Config) {
 	cfg.Output.LockPath = expandHome(cfg.Output.LockPath)
 	cfg.Store.Path = expandHome(cfg.Store.Path)
 	cfg.Overrides = expandHome(cfg.Overrides)
+}
+
+func defaultStorePath(mode string) string {
+	stateDir := xdg("XDG_STATE_HOME", filepath.Join(homeDir(), ".local", "state"))
+	baseState := filepath.Join(stateDir, "rime-pinyin-tmdb-generator")
+	mode = strings.TrimSpace(mode)
+	if mode == "full" {
+		return filepath.Join(baseState, "series-full.sqlite")
+	}
+	return filepath.Join(baseState, "series-popular.sqlite")
 }
 
 type Duration time.Duration
