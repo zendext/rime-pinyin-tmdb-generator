@@ -166,6 +166,8 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 		"trending_week_pages = 5",
 		"popular_pages = 10",
 		"top_rated_pages = 10",
+		"min_popularity = 10",
+		"request_interval = \"50ms\"",
 	} {
 		if !strings.Contains(configText, want) {
 			t.Fatalf("example config should include %q:\n%s", want, configText)
@@ -180,6 +182,9 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 	if strings.Contains(configText, "[store]") {
 		t.Fatalf("example config should rely on default store path:\n%s", configText)
 	}
+	if !strings.Contains(configText, "mode = \"full\"") {
+		t.Fatalf("example config should default to full mode:\n%s", configText)
+	}
 
 	readmeData, err := os.ReadFile("../../README.md")
 	if err != nil {
@@ -188,6 +193,9 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 	readme := string(readmeData)
 	if !strings.Contains(readme, "languages = [\"zh-CN\"]") {
 		t.Fatal("README should default to one language")
+	}
+	if !strings.Contains(readme, "mode = \"full\"") || !strings.Contains(readme, "`bootstrap.mode = \"full\"` 是默认模式") {
+		t.Fatal("README should document full as the default mode")
 	}
 	if strings.Contains(readme, "max_pages = 10") {
 		t.Fatal("README default config should not include max_pages")
@@ -206,6 +214,12 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 	}
 	if !strings.Contains(readme, "popular 和 full 模式都可以用 `status`") {
 		t.Fatal("README should explain status works for popular and full modes")
+	}
+	if !strings.Contains(readme, "min_popularity = 10") || !strings.Contains(readme, "popularity >= min_popularity") {
+		t.Fatal("README should document full min_popularity filtering")
+	}
+	if !strings.Contains(readme, `request_interval = "50ms"`) || !strings.Contains(readme, "`50ms` 等于 20 rps") {
+		t.Fatal("README should document the default request interval")
 	}
 	if strings.Contains(readme, "state_path =") {
 		t.Fatal("README default config should not include state_path")

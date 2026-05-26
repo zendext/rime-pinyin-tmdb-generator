@@ -194,6 +194,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 		StorePath:       cfg.Store.Path,
 		RequestInterval: cfg.Bootstrap.RequestInterval.Std(),
 		MaxItems:        cfg.Bootstrap.MaxItems,
+		MinPopularity:   cfg.Bootstrap.MinPopularity,
 		Logf: func(format string, args ...any) {
 			fmt.Fprintf(stdout, format+"\n", args...)
 		},

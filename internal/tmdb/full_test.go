@@ -194,6 +194,53 @@ func TestClientFullBootstrapLogsPauseAndSkippedItems(t *testing.T) {
 	}
 }
 
+func TestClientFullBootstrapSkipsItemsBelowMinPopularity(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		switch r.URL.Path {
+		case "/p/exports/tv_series_ids_05_26_2026.json.gz":
+			w.Header().Set("Content-Type", "application/gzip")
+			gz := gzip.NewWriter(w)
+			fmt.Fprintln(gz, `{"id":101,"popularity":9.9,"adult":false}`)
+			fmt.Fprintln(gz, `{"id":102,"popularity":10,"adult":false}`)
+			if err := gz.Close(); err != nil {
+				t.Fatal(err)
+			}
+		case "/3/tv/102/translations":
+			writeJSON(t, w, translationPayload(102, "达标剧集"))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := &Client{
+		BaseURL:         server.URL + "/3",
+		APIKey:          "test-key",
+		Languages:       []string{"zh-CN"},
+		HTTP:            server.Client(),
+		BootstrapMode:   "full",
+		ExportBaseURL:   server.URL + "/p/exports",
+		ExportDate:      "05_26_2026",
+		StorePath:       filepath.Join(t.TempDir(), "series.sqlite"),
+		RequestInterval: 0,
+		MinPopularity:   10,
+	}
+
+	got, err := client.FetchSeries(context.Background(), time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != 102 {
+		t.Fatalf("expected only item at popularity threshold, got %#v", got)
+	}
+	wantPaths := []string{"/p/exports/tv_series_ids_05_26_2026.json.gz", "/3/tv/102/translations"}
+	if !reflect.DeepEqual(paths, wantPaths) {
+		t.Fatalf("unexpected paths: %#v", paths)
+	}
+}
+
 func TestClientFullBootstrapResumesEarliestIncompleteExportBeforeTryingNewDates(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "series.sqlite")
 	db, err := store.Open(storePath)

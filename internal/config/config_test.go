@@ -133,7 +133,7 @@ func TestApplyModeDefaultsUsesFinalModeUnlessStorePathIsExplicit(t *testing.T) {
 
 func TestLoadUsesFullBootstrapAndStoreConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
-	data := []byte("[store]\npath = \"~/state/series.sqlite\"\n[bootstrap]\nmode = \"full\"\nexport_date = \"05_26_2026\"\nrequest_interval = \"200ms\"\nmax_items = 100\n")
+	data := []byte("[store]\npath = \"~/state/series.sqlite\"\n[bootstrap]\nmode = \"full\"\nexport_date = \"05_26_2026\"\nrequest_interval = \"200ms\"\nmax_items = 100\nmin_popularity = 12.5\n")
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,26 @@ func TestLoadUsesFullBootstrapAndStoreConfig(t *testing.T) {
 	if got.Bootstrap.MaxItems != 100 {
 		t.Fatalf("unexpected max items: %d", got.Bootstrap.MaxItems)
 	}
+	if got.Bootstrap.MinPopularity != 12.5 {
+		t.Fatalf("unexpected min popularity: %v", got.Bootstrap.MinPopularity)
+	}
 	if strings.HasPrefix(got.Store.Path, "~") {
 		t.Fatalf("expected store path expansion, got %q", got.Store.Path)
+	}
+}
+
+func TestDefaultFullBootstrapMinPopularityIsTen(t *testing.T) {
+	got := Default()
+	if got.Bootstrap.Mode != "full" {
+		t.Fatalf("expected default bootstrap mode full, got %q", got.Bootstrap.Mode)
+	}
+	if got.Bootstrap.RequestInterval.Std().String() != "50ms" {
+		t.Fatalf("expected default request interval 50ms, got %s", got.Bootstrap.RequestInterval.Std())
+	}
+	if got.Bootstrap.MinPopularity != 10 {
+		t.Fatalf("expected default min popularity 10, got %v", got.Bootstrap.MinPopularity)
+	}
+	if !strings.HasSuffix(got.Store.Path, filepath.Join("rime-pinyin-tmdb-generator", "series-full.sqlite")) {
+		t.Fatalf("expected default store path to use full mode, got %q", got.Store.Path)
 	}
 }

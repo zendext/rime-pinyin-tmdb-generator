@@ -32,6 +32,7 @@ type Client struct {
 	StorePath       string
 	RequestInterval time.Duration
 	MaxItems        int
+	MinPopularity   float64
 	Logf            func(format string, args ...any)
 }
 
@@ -238,7 +239,7 @@ func (c *Client) consumeExport(ctx context.Context, db *store.DB, exportDate str
 		}
 		nextCursor := offset + 1
 		lastCursor = nextCursor
-		if item.Adult || item.ID <= 0 {
+		if item.Adult || item.ID <= 0 || (c.MinPopularity > 0 && item.Popularity < c.MinPopularity) {
 			skippedItems++
 			if err := db.SetBootstrap(exportDate, nextCursor, false); err != nil {
 				return err

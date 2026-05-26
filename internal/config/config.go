@@ -43,6 +43,7 @@ type BootstrapConfig struct {
 	ExportBaseURL   string        `toml:"export_base_url"`
 	RequestInterval Duration      `toml:"request_interval"`
 	MaxItems        int           `toml:"max_items"`
+	MinPopularity   float64       `toml:"min_popularity"`
 }
 
 type PopularConfig struct {
@@ -71,12 +72,13 @@ func Default() Config {
 			LockPath: filepath.Join(baseState, "update.lock"),
 		},
 		Store: StoreConfig{
-			Path: filepath.Join(baseState, "series-popular.sqlite"),
+			Path: filepath.Join(baseState, "series-full.sqlite"),
 		},
 		Bootstrap: BootstrapConfig{
-			Mode:            "popular",
+			Mode:            "full",
 			Popular:         PopularConfig{TrendingWeekPages: 5, PopularPages: 10, TopRatedPages: 10},
-			RequestInterval: Duration(200 * time.Millisecond),
+			RequestInterval: Duration(50 * time.Millisecond),
+			MinPopularity:   10,
 		},
 		Overrides: filepath.Join(baseConfig, "overrides.yaml"),
 	}

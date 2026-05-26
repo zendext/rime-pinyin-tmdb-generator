@@ -44,8 +44,9 @@ dict_path = "~/.local/share/rime-data/tmdb.dict.yaml"
 lock_path = "~/.local/state/rime-pinyin-tmdb-generator/update.lock"
 
 [bootstrap]
-mode = "popular"
-request_interval = "200ms"
+mode = "full"
+request_interval = "50ms"
+min_popularity = 10
 
 [bootstrap.popular]
 trending_week_pages = 5
@@ -68,21 +69,28 @@ SQLite store 默认按模式分开，通常不需要配置：
 path = "/path/to/series.sqlite"
 ```
 
-`bootstrap.mode = "popular"` 是默认模式，会抓取常见榜单并写入 SQLite store。各榜单的默认页数是：
+`bootstrap.mode = "full"` 是默认模式，会下载 TMDb Daily ID Export，并只处理 `popularity >= min_popularity` 的非成人 TV series，默认阈值是 `10`。通过过滤后，才会按 ID 逐个请求 `/tv/{id}/translations`。`50ms` 等于 20 rps；一次请求会返回所有配置语言的翻译，所以不会因为配置多个语言而成倍增加请求数。运行状态和进度都保存在 SQLite store 里，遇到中断或 429 后下次运行会从 cursor 继续。
+
+如果要改成 popular 模式，可以配置：
+
+```toml
+[bootstrap]
+mode = "popular"
+request_interval = "50ms"
+
+[bootstrap.popular]
+trending_week_pages = 5
+popular_pages = 10
+top_rated_pages = 10
+```
+
+popular 模式会抓取常见榜单并写入 SQLite store。各榜单的默认页数是：
 
 - `/trending/tv/week`：默认最多 5 页
 - `/tv/popular`：默认最多 10 页
 - `/tv/top_rated`：默认最多 10 页
 
-这些榜单会按 TMDb ID 去重，再逐个请求 `/tv/{id}/translations`。要构建完整 TV series 词库，可以改成：
-
-```toml
-[bootstrap]
-mode = "full"
-request_interval = "200ms"
-```
-
-全量模式会下载 TMDb Daily ID Export，按 ID 逐个请求 `/tv/{id}/translations`。`200ms` 等于 5 rps；一次请求会返回所有配置语言的翻译，所以不会因为配置多个语言而成倍增加请求数。运行状态和进度都保存在 SQLite store 里，遇到中断或 429 后下次运行会从 cursor 继续。
+这些榜单会按 TMDb ID 去重，再逐个请求 `/tv/{id}/translations`。
 
 popular 和 full 模式都可以用 `status` 查看本地状态：
 
