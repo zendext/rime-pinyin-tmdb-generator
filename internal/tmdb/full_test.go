@@ -133,8 +133,58 @@ func TestClientFullBootstrapLogsProgress(t *testing.T) {
 	out := logs.String()
 	for _, want := range []string{
 		"full bootstrap export=05_26_2026 cursor=0 completed=false",
+		"full bootstrap download export=05_26_2026",
 		"full bootstrap progress export=05_26_2026 cursor=100 processed=100",
-		"full bootstrap completed export=05_26_2026 cursor=101 processed=101",
+		"full bootstrap completed export=05_26_2026 cursor=101 processed=101 skipped=0",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected log %q in:\n%s", want, out)
+		}
+	}
+}
+
+func TestClientFullBootstrapLogsPauseAndSkippedItems(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/p/exports/tv_series_ids_05_26_2026.json.gz":
+			w.Header().Set("Content-Type", "application/gzip")
+			gz := gzip.NewWriter(w)
+			fmt.Fprintln(gz, `{"id":101,"popularity":1,"adult":true}`)
+			fmt.Fprintln(gz, `{"id":102,"popularity":1,"adult":false}`)
+			fmt.Fprintln(gz, `{"id":103,"popularity":1,"adult":false}`)
+			if err := gz.Close(); err != nil {
+				t.Fatal(err)
+			}
+		default:
+			writeJSON(t, w, translationPayload(pathID(t, r.URL.Path), "虚构剧集"))
+		}
+	}))
+	defer server.Close()
+
+	var logs bytes.Buffer
+	client := &Client{
+		BaseURL:         server.URL + "/3",
+		APIKey:          "test-key",
+		Languages:       []string{"zh-CN"},
+		HTTP:            server.Client(),
+		BootstrapMode:   "full",
+		ExportBaseURL:   server.URL + "/p/exports",
+		ExportDate:      "05_26_2026",
+		StorePath:       filepath.Join(t.TempDir(), "series.sqlite"),
+		RequestInterval: 0,
+		MaxItems:        1,
+		Logf: func(format string, args ...any) {
+			fmt.Fprintf(&logs, format+"\n", args...)
+		},
+	}
+
+	if _, err := client.FetchSeries(context.Background(), time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	out := logs.String()
+	for _, want := range []string{
+		"full bootstrap skipped export=05_26_2026 cursor=1 skipped=1",
+		"full bootstrap paused export=05_26_2026 cursor=2 processed=1 skipped=1 reason=max_items",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected log %q in:\n%s", want, out)

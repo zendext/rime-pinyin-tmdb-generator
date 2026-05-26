@@ -87,7 +87,8 @@ func TestRunGenerateWritesFullBootstrapLogsToStdout(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
 	storePath := filepath.Join(dir, "series.sqlite")
-	configData := []byte("[tmdb]\napi_key = \"test\"\nbase_url = \"http://127.0.0.1:1\"\n[store]\npath = \"" + storePath + "\"\n[bootstrap]\nmode = \"full\"\nexport_date = \"05_26_2026\"\n")
+	lockPath := filepath.Join(dir, "update.lock")
+	configData := []byte("[tmdb]\napi_key = \"test\"\nbase_url = \"http://127.0.0.1:1\"\n[output]\nlock_path = \"" + lockPath + "\"\n[store]\npath = \"" + storePath + "\"\n[bootstrap]\nmode = \"full\"\nexport_date = \"05_26_2026\"\n")
 	if err := os.WriteFile(configPath, configData, 0o644); err != nil {
 		t.Fatal(err)
 	}

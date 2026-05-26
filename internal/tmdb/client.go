@@ -68,6 +68,9 @@ func (c *Client) fetchPopularBootstrap(ctx context.Context, since time.Time) ([]
 		return nil, err
 	}
 	seen := make(map[int]bool)
+	c.logf("popular bootstrap fetched_items=%d unique_ids=%d", len(items), uniqueItemCount(items))
+	processed := 0
+	total := uniqueItemCount(items)
 	for _, item := range items {
 		if item.ID <= 0 || seen[item.ID] {
 			continue
@@ -87,8 +90,17 @@ func (c *Client) fetchPopularBootstrap(ctx context.Context, since time.Time) ([]
 		}); err != nil {
 			return nil, err
 		}
+		processed++
+		if processed%50 == 0 {
+			c.logf("popular translations progress processed=%d total=%d", processed, total)
+		}
 		c.wait(ctx)
 	}
+	count, err := db.SeriesCount()
+	if err != nil {
+		return nil, err
+	}
+	c.logf("popular bootstrap completed processed=%d store_series=%d", processed, count)
 	return c.recordsFromStore(db)
 }
 
@@ -171,6 +183,7 @@ func (c *Client) refreshChangedSeries(ctx context.Context, db *store.DB, since t
 }
 
 func (c *Client) consumeExport(ctx context.Context, db *store.DB, exportDate string, cursor int) error {
+	c.logf("full bootstrap download export=%s", exportDate)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(c.exportBaseURL(), "/")+"/tv_series_ids_"+exportDate+".json.gz", nil)
 	if err != nil {
 		return err
@@ -194,7 +207,9 @@ func (c *Client) consumeExport(ctx context.Context, db *store.DB, exportDate str
 	defer gz.Close()
 	scanner := bufio.NewScanner(gz)
 	processedItems := 0
+	skippedItems := 0
 	lastCursor := cursor
+	persistedCursor := cursor
 	for offset := 0; scanner.Scan(); offset++ {
 		if offset < cursor {
 			continue
@@ -206,12 +221,18 @@ func (c *Client) consumeExport(ctx context.Context, db *store.DB, exportDate str
 		nextCursor := offset + 1
 		lastCursor = nextCursor
 		if item.Adult || item.ID <= 0 {
+			skippedItems++
 			if err := db.SetBootstrap(exportDate, nextCursor, false); err != nil {
 				return err
+			}
+			persistedCursor = nextCursor
+			if skippedItems%100 == 0 || skippedItems == 1 {
+				c.logf("full bootstrap skipped export=%s cursor=%d skipped=%d", exportDate, nextCursor, skippedItems)
 			}
 			continue
 		}
 		if c.MaxItems > 0 && processedItems >= c.MaxItems {
+			c.logf("full bootstrap paused export=%s cursor=%d processed=%d skipped=%d reason=max_items", exportDate, persistedCursor, processedItems, skippedItems)
 			return nil
 		}
 		record, err := c.fetchSeriesTranslationsByID(ctx, item.ID)
@@ -230,6 +251,7 @@ func (c *Client) consumeExport(ctx context.Context, db *store.DB, exportDate str
 		if err := db.SetBootstrap(exportDate, nextCursor, false); err != nil {
 			return err
 		}
+		persistedCursor = nextCursor
 		processedItems++
 		if processedItems%100 == 0 {
 			c.logf("full bootstrap progress export=%s cursor=%d processed=%d", exportDate, nextCursor, processedItems)
@@ -239,7 +261,7 @@ func (c *Client) consumeExport(ctx context.Context, db *store.DB, exportDate str
 	if err := scanner.Err(); err != nil {
 		return err
 	}
-	c.logf("full bootstrap completed export=%s cursor=%d processed=%d", exportDate, lastCursor, processedItems)
+	c.logf("full bootstrap completed export=%s cursor=%d processed=%d skipped=%d", exportDate, lastCursor, processedItems, skippedItems)
 	return db.SetBootstrap(exportDate, lastCursor, true)
 }
 
@@ -302,6 +324,7 @@ func (c *Client) fetchDiscoverPages(ctx context.Context) ([]SeriesRecord, error)
 
 func (c *Client) fetchCommonListItems(ctx context.Context) ([]seriesAPIRecord, error) {
 	var items []seriesAPIRecord
+	c.logf("popular bootstrap start sources=%d", len(c.PopularSources))
 	for _, source := range c.PopularSources {
 		for page := 1; page <= source.Pages; page++ {
 			q := url.Values{
@@ -312,6 +335,7 @@ func (c *Client) fetchCommonListItems(ctx context.Context) ([]seriesAPIRecord, e
 			if err := c.request(ctx, http.MethodGet, source.Path, q, &resp); err != nil {
 				return nil, err
 			}
+			c.logf("popular list source=%s page=%d items=%d", source.Path, page, len(resp.Results))
 			items = append(items, resp.Results...)
 			if resp.TotalPages > 0 && page >= resp.TotalPages {
 				break
@@ -586,6 +610,16 @@ func titlesFromRecord(record SeriesRecord) map[string]string {
 		}
 	}
 	return titles
+}
+
+func uniqueItemCount(items []seriesAPIRecord) int {
+	seen := make(map[int]bool)
+	for _, item := range items {
+		if item.ID > 0 {
+			seen[item.ID] = true
+		}
+	}
+	return len(seen)
 }
 
 func retryAfter(value string) (time.Duration, bool) {

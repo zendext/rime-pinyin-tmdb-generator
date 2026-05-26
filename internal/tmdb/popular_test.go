@@ -1,7 +1,9 @@
 package tmdb
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -185,6 +187,65 @@ func TestClientPopularBootstrapUsesConfiguredSourcePages(t *testing.T) {
 	for source, wantCount := range want {
 		if pageCounts[source] != wantCount {
 			t.Fatalf("expected %s to fetch %d pages, got %d", source, wantCount, pageCounts[source])
+		}
+	}
+}
+
+func TestClientPopularBootstrapLogsProgress(t *testing.T) {
+	var nextID int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/3/trending/tv/week":
+			results := make([]map[string]any, 0, 20)
+			for i := 0; i < 20; i++ {
+				nextID++
+				results = append(results, map[string]any{"id": nextID, "popularity": float64(nextID)})
+			}
+			writeJSON(t, w, map[string]any{"page": 1, "total_pages": 1, "results": results})
+		case "/3/tv/popular":
+			results := make([]map[string]any, 0, 31)
+			for i := 0; i < 31; i++ {
+				nextID++
+				results = append(results, map[string]any{"id": nextID, "popularity": float64(nextID)})
+			}
+			writeJSON(t, w, map[string]any{"page": 1, "total_pages": 1, "results": results})
+		case "/3/tv/top_rated":
+			writeJSON(t, w, map[string]any{"page": 1, "total_pages": 1, "results": []map[string]any{{"id": 1, "popularity": 1}}})
+		default:
+			writeJSON(t, w, translationPayload(pathID(t, r.URL.Path), "虚构剧集"))
+		}
+	}))
+	defer server.Close()
+
+	var logs bytes.Buffer
+	client := &Client{
+		BaseURL:         server.URL + "/3",
+		APIKey:          "test-key",
+		Languages:       []string{"zh-CN"},
+		HTTP:            server.Client(),
+		BootstrapMode:   "popular",
+		PopularSources:  []PopularSource{{Path: "/trending/tv/week", Pages: 1}, {Path: "/tv/popular", Pages: 1}, {Path: "/tv/top_rated", Pages: 1}},
+		StorePath:       filepath.Join(t.TempDir(), "series.sqlite"),
+		RequestInterval: 0,
+		Logf: func(format string, args ...any) {
+			fmt.Fprintf(&logs, format+"\n", args...)
+		},
+	}
+
+	if _, err := client.FetchSeries(context.Background(), time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	out := logs.String()
+	for _, want := range []string{
+		"popular bootstrap start sources=3",
+		"popular list source=/trending/tv/week page=1 items=20",
+		"popular list source=/tv/popular page=1 items=31",
+		"popular bootstrap fetched_items=52 unique_ids=51",
+		"popular translations progress processed=50 total=51",
+		"popular bootstrap completed processed=51 store_series=51",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected log %q in:\n%s", want, out)
 		}
 	}
 }
