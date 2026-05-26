@@ -38,7 +38,6 @@ api_key = "你的 TMDb API Key"
 base_url = "https://api.themoviedb.org/3"
 # 可选：["zh-CN", "zh-TW", "zh-HK"]
 languages = ["zh-CN"]
-max_pages = 10
 
 [output]
 dict_path = "~/.local/share/rime-data/tmdb.dict.yaml"
@@ -47,6 +46,11 @@ lock_path = "~/.local/state/rime-pinyin-tmdb-generator/update.lock"
 [bootstrap]
 mode = "popular"
 request_interval = "200ms"
+
+[bootstrap.popular]
+trending_week_pages = 5
+popular_pages = 10
+top_rated_pages = 10
 
 [rime]
 redeploy_command = ""
@@ -59,13 +63,13 @@ SQLite store 默认写到 `~/.local/state/rime-pinyin-tmdb-generator/series.sqli
 path = "/path/to/series.sqlite"
 ```
 
-`bootstrap.mode = "popular"` 是默认模式，会抓取常见榜单并写入 SQLite store：
+`bootstrap.mode = "popular"` 是默认模式，会抓取常见榜单并写入 SQLite store。各榜单的默认页数是：
 
-- `/trending/tv/week`：最多 5 页
-- `/tv/popular`：最多 10 页
-- `/tv/top_rated`：最多 10 页
+- `/trending/tv/week`：默认最多 5 页
+- `/tv/popular`：默认最多 10 页
+- `/tv/top_rated`：默认最多 10 页
 
-`max_pages` 是全局页数上限，默认 10；如果调低到 3，上面每个来源都会最多抓 3 页。这些榜单会按 TMDb ID 去重，再逐个请求 `/tv/{id}/translations`。要构建完整 TV series 词库，可以改成：
+这些榜单会按 TMDb ID 去重，再逐个请求 `/tv/{id}/translations`。要构建完整 TV series 词库，可以改成：
 
 ```toml
 [bootstrap]

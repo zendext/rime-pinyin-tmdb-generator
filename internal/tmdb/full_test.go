@@ -1,6 +1,7 @@
 package tmdb
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -88,5 +90,54 @@ func TestClientFullBootstrapUsesDailyExportStoreAndTranslationsEndpoint(t *testi
 	}
 	if !reflect.DeepEqual(paths, wantPaths) {
 		t.Fatalf("second run should use completed store without refetching, paths=%#v", paths)
+	}
+}
+
+func TestClientFullBootstrapLogsProgress(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/p/exports/tv_series_ids_05_26_2026.json.gz":
+			w.Header().Set("Content-Type", "application/gzip")
+			gz := gzip.NewWriter(w)
+			for id := 1; id <= 101; id++ {
+				fmt.Fprintf(gz, `{"id":%d,"popularity":1,"adult":false}`+"\n", id)
+			}
+			if err := gz.Close(); err != nil {
+				t.Fatal(err)
+			}
+		default:
+			writeJSON(t, w, translationPayload(pathID(t, r.URL.Path), "虚构剧集"))
+		}
+	}))
+	defer server.Close()
+
+	var logs bytes.Buffer
+	client := &Client{
+		BaseURL:         server.URL + "/3",
+		APIKey:          "test-key",
+		Languages:       []string{"zh-CN"},
+		HTTP:            server.Client(),
+		BootstrapMode:   "full",
+		ExportBaseURL:   server.URL + "/p/exports",
+		ExportDate:      "05_26_2026",
+		StorePath:       filepath.Join(t.TempDir(), "series.sqlite"),
+		RequestInterval: 0,
+		Logf: func(format string, args ...any) {
+			fmt.Fprintf(&logs, format+"\n", args...)
+		},
+	}
+
+	if _, err := client.FetchSeries(context.Background(), time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	out := logs.String()
+	for _, want := range []string{
+		"full bootstrap export=05_26_2026 cursor=0 completed=false",
+		"full bootstrap progress export=05_26_2026 cursor=100 processed=100",
+		"full bootstrap completed export=05_26_2026 cursor=101 processed=101",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected log %q in:\n%s", want, out)
+		}
 	}
 }

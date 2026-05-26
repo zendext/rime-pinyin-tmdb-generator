@@ -68,7 +68,6 @@ func TestClientFetchesDiscoverTVAndTranslations(t *testing.T) {
 		BaseURL:   server.URL,
 		APIKey:    "test-key",
 		Languages: []string{"zh-CN"},
-		MaxPages:  1,
 		HTTP:      server.Client(),
 	}).FetchSeries(context.Background(), time.Time{})
 	if err != nil {
@@ -129,7 +128,6 @@ func TestClientFetchesChangedTVIDsSinceLastRun(t *testing.T) {
 		BaseURL:   server.URL,
 		APIKey:    "test-key",
 		Languages: []string{"zh-CN"},
-		MaxPages:  1,
 		HTTP:      server.Client(),
 	}).FetchSeries(context.Background(), since)
 	if err != nil {
@@ -179,7 +177,6 @@ func TestClientSplitsChangedTVQueriesIntoFourteenDayWindows(t *testing.T) {
 		BaseURL:   server.URL,
 		APIKey:    "test-key",
 		Languages: []string{"zh-CN"},
-		MaxPages:  1,
 		HTTP:      server.Client(),
 	}).FetchSeries(context.Background(), start)
 	if err != nil {

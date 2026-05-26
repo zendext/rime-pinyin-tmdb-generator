@@ -23,15 +23,21 @@ type Client struct {
 	BaseURL   string
 	APIKey    string
 	Languages []string
-	MaxPages  int
 	HTTP      *http.Client
 
 	BootstrapMode   string
+	PopularSources  []PopularSource
 	ExportBaseURL   string
 	ExportDate      string
 	StorePath       string
 	RequestInterval time.Duration
 	MaxItems        int
+	Logf            func(format string, args ...any)
+}
+
+type PopularSource struct {
+	Path  string
+	Pages int
 }
 
 func (c *Client) FetchSeries(ctx context.Context, since time.Time) ([]SeriesRecord, error) {
@@ -120,6 +126,7 @@ func (c *Client) fetchFullBootstrap(ctx context.Context, since time.Time) ([]Ser
 		if err != nil {
 			return nil, err
 		}
+		c.logf("full bootstrap export=%s cursor=%d completed=%t", exportDate, cursor, completed)
 		if !completed {
 			if err := c.consumeExport(ctx, db, exportDate, cursor); err != nil {
 				if errors.Is(err, errExportNotFound) && c.ExportDate == "" {
@@ -128,6 +135,7 @@ func (c *Client) fetchFullBootstrap(ctx context.Context, since time.Time) ([]Ser
 				return nil, err
 			}
 		} else if !since.IsZero() {
+			c.logf("full incremental since=%s", since.UTC().Format(time.RFC3339))
 			if err := c.refreshChangedSeries(ctx, db, since); err != nil {
 				return nil, err
 			}
@@ -142,6 +150,7 @@ func (c *Client) refreshChangedSeries(ctx context.Context, db *store.DB, since t
 	if err != nil {
 		return err
 	}
+	c.logf("full incremental changed_ids=%d", len(ids))
 	for _, id := range ids {
 		record, err := c.fetchSeriesTranslationsByID(ctx, id)
 		if err != nil {
@@ -222,11 +231,15 @@ func (c *Client) consumeExport(ctx context.Context, db *store.DB, exportDate str
 			return err
 		}
 		processedItems++
+		if processedItems%100 == 0 {
+			c.logf("full bootstrap progress export=%s cursor=%d processed=%d", exportDate, nextCursor, processedItems)
+		}
 		c.wait(ctx)
 	}
 	if err := scanner.Err(); err != nil {
 		return err
 	}
+	c.logf("full bootstrap completed export=%s cursor=%d processed=%d", exportDate, lastCursor, processedItems)
 	return db.SetBootstrap(exportDate, lastCursor, true)
 }
 
@@ -257,10 +270,9 @@ func (c *Client) recordsFromStore(db *store.DB) ([]SeriesRecord, error) {
 }
 
 func (c *Client) fetchDiscoverPages(ctx context.Context) ([]SeriesRecord, error) {
-	maxPages := c.maxPages()
 	seen := make(map[int]bool)
 	var records []SeriesRecord
-	for page := 1; page <= maxPages; page++ {
+	for page := 1; page <= 1; page++ {
 		q := url.Values{
 			"include_adult":                []string{"false"},
 			"include_null_first_air_dates": []string{"false"},
@@ -289,14 +301,9 @@ func (c *Client) fetchDiscoverPages(ctx context.Context) ([]SeriesRecord, error)
 }
 
 func (c *Client) fetchCommonListItems(ctx context.Context) ([]seriesAPIRecord, error) {
-	sources := []popularSource{
-		{Path: "/trending/tv/week", Pages: 5},
-		{Path: "/tv/popular", Pages: 10},
-		{Path: "/tv/top_rated", Pages: 10},
-	}
 	var items []seriesAPIRecord
-	for _, source := range sources {
-		for page := 1; page <= c.pageLimit(source.Pages); page++ {
+	for _, source := range c.PopularSources {
+		for page := 1; page <= source.Pages; page++ {
 			q := url.Values{
 				"language": []string{c.primaryLanguage()},
 				"page":     []string{strconv.Itoa(page)},
@@ -314,17 +321,11 @@ func (c *Client) fetchCommonListItems(ctx context.Context) ([]seriesAPIRecord, e
 	return items, nil
 }
 
-type popularSource struct {
-	Path  string
-	Pages int
-}
-
 func (c *Client) fetchChangedSeriesIDs(ctx context.Context, since time.Time) ([]int, error) {
-	maxPages := c.maxPages()
 	seen := make(map[int]bool)
 	var ids []int
 	for _, window := range changeWindows(since, time.Now().UTC()) {
-		for page := 1; page <= maxPages; page++ {
+		for page := 1; page <= 1; page++ {
 			q := url.Values{
 				"start_date": []string{window.start.Format("2006-01-02")},
 				"end_date":   []string{window.end.Format("2006-01-02")},
@@ -448,21 +449,6 @@ func (c *Client) primaryLanguage() string {
 	return "zh-CN"
 }
 
-func (c *Client) maxPages() int {
-	if c.MaxPages > 0 {
-		return c.MaxPages
-	}
-	return 10
-}
-
-func (c *Client) pageLimit(defaultPages int) int {
-	maxPages := c.maxPages()
-	if maxPages < defaultPages {
-		return maxPages
-	}
-	return defaultPages
-}
-
 func (c *Client) httpClient() *http.Client {
 	if c.HTTP != nil {
 		return c.HTTP
@@ -497,6 +483,12 @@ func (c *Client) wait(ctx context.Context) {
 	select {
 	case <-ctx.Done():
 	case <-time.After(interval):
+	}
+}
+
+func (c *Client) logf(format string, args ...any) {
+	if c.Logf != nil {
+		c.Logf(format, args...)
 	}
 }
 

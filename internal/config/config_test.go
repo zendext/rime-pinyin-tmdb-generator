@@ -40,7 +40,7 @@ func TestLoadExpandsTildePaths(t *testing.T) {
 func TestLoadUsesTMDBConfigAndEnvironment(t *testing.T) {
 	t.Setenv("TMDB_API_KEY", "env-key")
 	path := filepath.Join(t.TempDir(), "config.toml")
-	data := []byte("[tmdb]\napi_key = \"file-key\"\nbase_url = \"https://example.test/3\"\nlanguages = [\"zh-CN\"]\nmax_pages = 3\n")
+	data := []byte("[tmdb]\napi_key = \"file-key\"\nbase_url = \"https://example.test/3\"\nlanguages = [\"zh-CN\"]\n")
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -56,11 +56,26 @@ func TestLoadUsesTMDBConfigAndEnvironment(t *testing.T) {
 	if got.TMDB.BaseURL != "https://example.test/3" {
 		t.Fatalf("unexpected base URL: %q", got.TMDB.BaseURL)
 	}
-	if got.TMDB.MaxPages != 3 {
-		t.Fatalf("unexpected max pages: %d", got.TMDB.MaxPages)
-	}
 	if len(got.TMDB.Languages) != 1 || got.TMDB.Languages[0] != "zh-CN" {
 		t.Fatalf("unexpected languages: %#v", got.TMDB.Languages)
+	}
+}
+
+func TestLoadUsesPopularBootstrapPageConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	data := []byte("[bootstrap]\nmode = \"popular\"\n[bootstrap.popular]\ntrending_week_pages = 2\npopular_pages = 4\ntop_rated_pages = 6\n")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Bootstrap.Popular.TrendingWeekPages != 2 ||
+		got.Bootstrap.Popular.PopularPages != 4 ||
+		got.Bootstrap.Popular.TopRatedPages != 6 {
+		t.Fatalf("unexpected popular page config: %#v", got.Bootstrap.Popular)
 	}
 }
 

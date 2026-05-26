@@ -58,9 +58,9 @@ func TestClientPopularBootstrapUsesCommonListsWithoutOnTheAir(t *testing.T) {
 		BaseURL:         server.URL + "/3",
 		APIKey:          "test-key",
 		Languages:       []string{"zh-CN"},
-		MaxPages:        1,
 		HTTP:            server.Client(),
 		BootstrapMode:   "popular",
+		PopularSources:  []PopularSource{{Path: "/trending/tv/week", Pages: 1}, {Path: "/tv/popular", Pages: 1}, {Path: "/tv/top_rated", Pages: 1}},
 		StorePath:       filepath.Join(t.TempDir(), "series.sqlite"),
 		RequestInterval: 0,
 	}
@@ -119,6 +119,7 @@ func TestClientPopularBootstrapUsesSourceSpecificPageLimits(t *testing.T) {
 		Languages:       []string{"zh-CN"},
 		HTTP:            server.Client(),
 		BootstrapMode:   "popular",
+		PopularSources:  []PopularSource{{Path: "/trending/tv/week", Pages: 5}, {Path: "/tv/popular", Pages: 10}, {Path: "/tv/top_rated", Pages: 10}},
 		StorePath:       filepath.Join(t.TempDir(), "series.sqlite"),
 		RequestInterval: 0,
 	}
@@ -137,7 +138,7 @@ func TestClientPopularBootstrapUsesSourceSpecificPageLimits(t *testing.T) {
 	}
 }
 
-func TestClientPopularBootstrapCapsSourceSpecificPageLimitsWithMaxPages(t *testing.T) {
+func TestClientPopularBootstrapUsesConfiguredSourcePages(t *testing.T) {
 	pageCounts := make(map[string]int)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -166,9 +167,9 @@ func TestClientPopularBootstrapCapsSourceSpecificPageLimitsWithMaxPages(t *testi
 		BaseURL:         server.URL + "/3",
 		APIKey:          "test-key",
 		Languages:       []string{"zh-CN"},
-		MaxPages:        3,
 		HTTP:            server.Client(),
 		BootstrapMode:   "popular",
+		PopularSources:  []PopularSource{{Path: "/trending/tv/week", Pages: 2}, {Path: "/tv/popular", Pages: 3}, {Path: "/tv/top_rated", Pages: 4}},
 		StorePath:       filepath.Join(t.TempDir(), "series.sqlite"),
 		RequestInterval: 0,
 	}
@@ -176,9 +177,14 @@ func TestClientPopularBootstrapCapsSourceSpecificPageLimitsWithMaxPages(t *testi
 	if _, err := client.FetchSeries(context.Background(), time.Time{}); err != nil {
 		t.Fatal(err)
 	}
-	for source, got := range pageCounts {
-		if got != 3 {
-			t.Fatalf("expected %s to be capped at 3 pages, got %d", source, got)
+	want := map[string]int{
+		"/3/trending/tv/week": 2,
+		"/3/tv/popular":       3,
+		"/3/tv/top_rated":     4,
+	}
+	for source, wantCount := range want {
+		if pageCounts[source] != wantCount {
+			t.Fatalf("expected %s to fetch %d pages, got %d", source, wantCount, pageCounts[source])
 		}
 	}
 }

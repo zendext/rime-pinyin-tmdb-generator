@@ -24,7 +24,6 @@ type TMDBConfig struct {
 	APIKey    string   `toml:"api_key"`
 	BaseURL   string   `toml:"base_url"`
 	Languages []string `toml:"languages"`
-	MaxPages  int      `toml:"max_pages"`
 }
 
 type OutputConfig struct {
@@ -37,11 +36,18 @@ type StoreConfig struct {
 }
 
 type BootstrapConfig struct {
-	Mode            string   `toml:"mode"`
-	ExportDate      string   `toml:"export_date"`
-	ExportBaseURL   string   `toml:"export_base_url"`
-	RequestInterval Duration `toml:"request_interval"`
-	MaxItems        int      `toml:"max_items"`
+	Mode            string        `toml:"mode"`
+	Popular         PopularConfig `toml:"popular"`
+	ExportDate      string        `toml:"export_date"`
+	ExportBaseURL   string        `toml:"export_base_url"`
+	RequestInterval Duration      `toml:"request_interval"`
+	MaxItems        int           `toml:"max_items"`
+}
+
+type PopularConfig struct {
+	TrendingWeekPages int `toml:"trending_week_pages"`
+	PopularPages      int `toml:"popular_pages"`
+	TopRatedPages     int `toml:"top_rated_pages"`
 }
 
 type RimeConfig struct {
@@ -58,7 +64,6 @@ func Default() Config {
 		TMDB: TMDBConfig{
 			BaseURL:   "https://api.themoviedb.org/3",
 			Languages: []string{"zh-CN", "zh-TW", "zh-HK"},
-			MaxPages:  10,
 		},
 		Output: OutputConfig{
 			DictPath: filepath.Join(dataDir, "rime-data", "tmdb.dict.yaml"),
@@ -69,6 +74,7 @@ func Default() Config {
 		},
 		Bootstrap: BootstrapConfig{
 			Mode:            "popular",
+			Popular:         PopularConfig{TrendingWeekPages: 5, PopularPages: 10, TopRatedPages: 10},
 			RequestInterval: Duration(200 * time.Millisecond),
 		},
 		Overrides: filepath.Join(baseConfig, "overrides.yaml"),

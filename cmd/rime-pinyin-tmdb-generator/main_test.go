@@ -83,6 +83,25 @@ func TestRunStatusReportsUnknownBootstrapModeNotTimerReady(t *testing.T) {
 	}
 }
 
+func TestRunGenerateWritesFullBootstrapLogsToStdout(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	storePath := filepath.Join(dir, "series.sqlite")
+	configData := []byte("[tmdb]\napi_key = \"test\"\nbase_url = \"http://127.0.0.1:1\"\n[store]\npath = \"" + storePath + "\"\n[bootstrap]\nmode = \"full\"\nexport_date = \"05_26_2026\"\n")
+	if err := os.WriteFile(configPath, configData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"generate", "--config", configPath}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("expected generate to fail against unreachable test URL")
+	}
+	if !strings.Contains(stdout.String(), "full bootstrap export=05_26_2026 cursor=0 completed=false") {
+		t.Fatalf("expected full bootstrap log on stdout, got stdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+	}
+}
+
 func TestSystemdTimerRunsDaily(t *testing.T) {
 	data, err := os.ReadFile("../../systemd/rime-pinyin-tmdb-generator-update.timer")
 	if err != nil {
@@ -102,8 +121,17 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 	if !strings.Contains(configText, "languages = [\"zh-CN\"]") {
 		t.Fatalf("example config should default to one language:\n%s", configText)
 	}
-	if !strings.Contains(configText, "max_pages = 10") {
-		t.Fatalf("example config should default max_pages to 10:\n%s", configText)
+	if strings.Contains(configText, "max_pages") {
+		t.Fatalf("example config should not include max_pages:\n%s", configText)
+	}
+	for _, want := range []string{
+		"trending_week_pages = 5",
+		"popular_pages = 10",
+		"top_rated_pages = 10",
+	} {
+		if !strings.Contains(configText, want) {
+			t.Fatalf("example config should include %q:\n%s", want, configText)
+		}
 	}
 	if !strings.Contains(configText, "# 可选") || !strings.Contains(configText, "zh-TW") || !strings.Contains(configText, "zh-HK") {
 		t.Fatalf("example config should comment optional languages:\n%s", configText)
@@ -123,8 +151,20 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 	if !strings.Contains(readme, "languages = [\"zh-CN\"]") {
 		t.Fatal("README should default to one language")
 	}
-	if !strings.Contains(readme, "max_pages = 10") {
-		t.Fatal("README should default max_pages to 10")
+	if strings.Contains(readme, "max_pages = 10") {
+		t.Fatal("README default config should not include max_pages")
+	}
+	if strings.Contains(readme, "--max-pages") {
+		t.Fatal("README should not document max-pages for popular defaults")
+	}
+	for _, want := range []string{
+		"/trending/tv/week`：默认最多 5 页",
+		"/tv/popular`：默认最多 10 页",
+		"/tv/top_rated`：默认最多 10 页",
+	} {
+		if !strings.Contains(readme, want) {
+			t.Fatalf("README should document popular source default %q", want)
+		}
 	}
 	if !strings.Contains(readme, "popular 和 full 模式都可以用 `status`") {
 		t.Fatal("README should explain status works for popular and full modes")

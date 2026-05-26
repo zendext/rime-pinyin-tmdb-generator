@@ -113,7 +113,6 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	apiKey := fs.String("api-key", "", "TMDb API key; TMDB_API_KEY also works")
 	baseURL := fs.String("base-url", "", "TMDb API base URL")
 	languages := fs.String("languages", "", "comma-separated TMDb language codes")
-	maxPages := fs.Int("max-pages", 0, "maximum pages to fetch per list source")
 	bootstrapMode := fs.String("bootstrap-mode", "", "bootstrap mode: popular or full")
 	storePath := fs.String("store", "", "SQLite store path for full bootstrap")
 	exportDate := fs.String("export-date", "", "TMDb daily export date in MM_DD_YYYY")
@@ -143,9 +142,6 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	}
 	if *languages != "" {
 		cfg.TMDB.Languages = splitCSV(*languages)
-	}
-	if *maxPages > 0 {
-		cfg.TMDB.MaxPages = *maxPages
 	}
 	if *bootstrapMode != "" {
 		cfg.Bootstrap.Mode = *bootstrapMode
@@ -182,13 +178,16 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 		BaseURL:         cfg.TMDB.BaseURL,
 		APIKey:          cfg.TMDB.APIKey,
 		Languages:       cfg.TMDB.Languages,
-		MaxPages:        cfg.TMDB.MaxPages,
 		BootstrapMode:   cfg.Bootstrap.Mode,
+		PopularSources:  popularSources(cfg.Bootstrap.Popular),
 		ExportBaseURL:   cfg.Bootstrap.ExportBaseURL,
 		ExportDate:      cfg.Bootstrap.ExportDate,
 		StorePath:       cfg.Store.Path,
 		RequestInterval: cfg.Bootstrap.RequestInterval.Std(),
 		MaxItems:        cfg.Bootstrap.MaxItems,
+		Logf: func(format string, args ...any) {
+			fmt.Fprintf(stdout, format+"\n", args...)
+		},
 	}
 	ctx := context.Background()
 	cancel := func() {}
@@ -216,6 +215,14 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "generated %d entries at %s\n", result.EntryCount, strings.Join(result.DictPaths, ", "))
 	return 0
+}
+
+func popularSources(cfg config.PopularConfig) []tmdb.PopularSource {
+	return []tmdb.PopularSource{
+		{Path: "/trending/tv/week", Pages: cfg.TrendingWeekPages},
+		{Path: "/tv/popular", Pages: cfg.PopularPages},
+		{Path: "/tv/top_rated", Pages: cfg.TopRatedPages},
+	}
 }
 
 func printUsage(w io.Writer) {
