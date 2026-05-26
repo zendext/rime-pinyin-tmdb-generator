@@ -1,0 +1,9 @@
+# Rime dictionary
+# encoding: utf-8
+---
+name: tmdb_hans
+version: "example"
+sort: by_weight
+...
+虚构剧集	xu gou ju ji	100
+示例节目	shi li jie mu	80

@@ -1,0 +1,97 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            artifact: rime-pinyin-tmdb-generator_linux_amd64
+            ext: ""
+          - goos: windows
+            goarch: amd64
+            artifact: rime-pinyin-tmdb-generator_windows_amd64
+            ext: .exe
+          - goos: darwin
+            goarch: arm64
+            artifact: rime-pinyin-tmdb-generator_macos_arm64
+            ext: ""
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Set Version
+        run: echo "VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p dist
+          go build \
+            -trimpath \
+            -ldflags="-s -w" \
+            -o "dist/rime-pinyin-tmdb-generator${{ matrix.ext }}" \
+            ./cmd/rime-pinyin-tmdb-generator
+
+      - name: Package
+        run: |
+          mkdir -p dist/package
+          cp "dist/rime-pinyin-tmdb-generator${{ matrix.ext }}" dist/package/
+          cp README.md LICENSE NOTICE.md dist/package/
+
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            (cd dist/package && zip -q "../${{ matrix.artifact }}_${VERSION}.zip" ./*)
+          else
+            tar -C dist/package -czf "dist/${{ matrix.artifact }}_${VERSION}.tar.gz" .
+          fi
+
+      - name: Checksums
+        run: |
+          cd dist
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            sha256sum "${{ matrix.artifact }}_${VERSION}.zip" > "${{ matrix.artifact }}_${VERSION}.zip.sha256"
+          else
+            sha256sum "${{ matrix.artifact }}_${VERSION}.tar.gz" > "${{ matrix.artifact }}_${VERSION}.tar.gz.sha256"
+          fi
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}.*
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

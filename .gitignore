@@ -1,0 +1,4 @@
+.worktrees/
+dist/
+*.dict.yaml.tmp
+*.json.tmp

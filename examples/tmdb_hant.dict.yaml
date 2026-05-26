@@ -1,0 +1,9 @@
+# Rime dictionary
+# encoding: utf-8
+---
+name: tmdb_hant
+version: "example"
+sort: by_weight
+...
+虛構劇集	xu gou ju ji	100
+示例節目	shi li jie mu	80

@@ -1,0 +1,7 @@
+[Unit]
+Description=Generate local Rime TMDb pinyin dictionary
+Documentation=https://github.com/zendext/rime-pinyin-tmdb-generator
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/rime-pinyin-tmdb-generator generate --config %h/.config/rime-pinyin-tmdb-generator/config.toml

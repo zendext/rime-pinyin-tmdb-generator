@@ -1,0 +1,17 @@
+[tmdb]
+api_key = ""
+base_url = "https://api.themoviedb.org/3"
+# 可选：["zh-CN", "zh-TW", "zh-HK"]
+languages = ["zh-CN"]
+max_pages = 10
+
+[output]
+dict_path = "~/.local/share/rime-data/tmdb.dict.yaml"
+lock_path = "~/.local/state/rime-pinyin-tmdb-generator/update.lock"
+
+[bootstrap]
+mode = "popular"
+request_interval = "200ms"
+
+[rime]
+redeploy_command = ""
