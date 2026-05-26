@@ -62,16 +62,16 @@ SQLite store 默认按模式分开，通常不需要配置：
 - popular 模式：`~/.local/state/rime-pinyin-tmdb-generator/series-popular.sqlite`
 - full 模式：`~/.local/state/rime-pinyin-tmdb-generator/series-full.sqlite`
 
-这样可以同时保留两种模式的进度和增量时间线。需要放到其他位置时，可以在配置里增加：
+这样可以同时保留两种模式的进度和生成状态。需要放到其他位置时，可以在配置里增加：
 
 ```toml
 [store]
 path = "/path/to/series.sqlite"
 ```
 
-`bootstrap.mode = "full"` 是默认模式，会下载 TMDb Daily ID Export，并只处理 `popularity >= min_popularity` 的非成人 TV series，默认阈值是 `10`。通过过滤后，才会按 ID 逐个请求 `/tv/{id}/translations`。`50ms` 等于 20 rps；一次请求会返回所有配置语言的翻译，所以不会因为配置多个语言而成倍增加请求数。运行状态和进度都保存在 SQLite store 里，遇到中断或 429 后下次运行会从 cursor 继续。
+`bootstrap.mode = "full"` 是默认模式，会下载 TMDb Daily ID Export，并只处理 `popularity >= min_popularity` 的非成人 TV series，默认阈值是 `10`。通过过滤后，才会按 ID 逐个请求 `/tv/{id}/translations`。`50ms` 等于 20 rps；一次请求会返回所有配置语言的翻译，所以不会因为配置多个语言而成倍增加请求数。运行状态和进度都保存在 SQLite store 里，首次 bootstrap 遇到中断或 429 后下次运行会从 cursor 继续。首次 bootstrap 完成后，后续运行会重新下载最新可用 Daily Export，在本地和 SQLite store 做 diff：新增且达标的 ID 才会请求 `/tv/{id}/translations`，已存在的 ID 只更新 popularity，不再请求 translations，低于阈值、成人、无效或从 export 消失的条目会从 store 删除。
 
-流行度阈值只在 full 扫描 Daily Export 时生效。断点续传保存的是 export 文件的 cursor，不会保存当时的 `min_popularity`，所以不要在同一个未完成的 full bootstrap 中途修改这个值：调低阈值不会自动回头补抓之前已跳过的条目，调高阈值也不会自动删除已经写入 SQLite store 的条目。需要更换阈值时，建议使用新的 store 或清理对应 export 的 bootstrap 进度后重新跑。
+流行度阈值只在 full 扫描 Daily Export 时生效。断点续传保存的是 export 文件的 cursor，不会保存当时的 `min_popularity`，所以不要在同一个未完成的 full bootstrap 中途修改这个值：调低阈值不会自动回头补抓之前已跳过的条目。首次 bootstrap 完成后会通过 Daily Export 本地 diff 应用当前阈值，低于阈值或消失的条目会从 SQLite store 删除。
 
 如果要改成 popular 模式，可以配置：
 
@@ -136,7 +136,7 @@ import_tables:
 
 full 模式则对应引入 `tmdb_full_hans` 或 `tmdb_full_hant`。
 
-工具会在 SQLite store 中保存运行状态，并用其中的时间戳进行后续增量更新。只有词典文件成功写入后，状态时间戳才会更新。
+工具会在 SQLite store 中保存运行状态。只有词典文件成功写入后，状态时间戳才会更新。
 
 ## 其他平台
 

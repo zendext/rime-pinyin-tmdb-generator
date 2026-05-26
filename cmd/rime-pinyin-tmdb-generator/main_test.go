@@ -222,7 +222,8 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 		"流行度阈值",
 		"不要在同一个未完成的 full bootstrap 中途修改",
 		"不会自动回头补抓",
-		"不会自动删除",
+		"完成后会通过 Daily Export 本地 diff",
+		"低于阈值或消失的条目会从 SQLite store 删除",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Fatalf("README should document popularity threshold caveat %q", want)
@@ -241,7 +242,7 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 		"SQLite store 默认按模式分开",
 		"series-popular.sqlite",
 		"series-full.sqlite",
-		"同时保留两种模式的进度和增量时间线",
+		"同时保留两种模式的进度和生成状态",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Fatalf("README should document mode-specific default store path %q", want)

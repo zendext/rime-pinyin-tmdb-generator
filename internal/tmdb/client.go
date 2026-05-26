@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -57,7 +58,7 @@ func (c *Client) FetchSeries(ctx context.Context, since time.Time) ([]SeriesReco
 
 func (c *Client) fetchPopularBootstrap(ctx context.Context, since time.Time) ([]SeriesRecord, error) {
 	if strings.TrimSpace(c.StorePath) == "" {
-		return c.fetchDiscoverOrChanges(ctx, since)
+		return nil, fmt.Errorf("TMDb popular bootstrap requires a store path")
 	}
 	db, err := store.Open(c.StorePath)
 	if err != nil {
@@ -105,25 +106,6 @@ func (c *Client) fetchPopularBootstrap(ctx context.Context, since time.Time) ([]
 	return c.recordsFromStore(db)
 }
 
-func (c *Client) fetchDiscoverOrChanges(ctx context.Context, since time.Time) ([]SeriesRecord, error) {
-	if since.IsZero() {
-		return c.fetchDiscoverPages(ctx)
-	}
-	ids, err := c.fetchChangedSeriesIDs(ctx, since)
-	if err != nil {
-		return nil, err
-	}
-	records := make([]SeriesRecord, 0, len(ids))
-	for _, id := range ids {
-		record, err := c.fetchSeriesByID(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		records = append(records, record)
-	}
-	return records, nil
-}
-
 func (c *Client) fetchFullBootstrap(ctx context.Context, since time.Time) ([]SeriesRecord, error) {
 	if strings.TrimSpace(c.StorePath) == "" {
 		return nil, fmt.Errorf("TMDb full bootstrap requires a store path")
@@ -134,26 +116,40 @@ func (c *Client) fetchFullBootstrap(ctx context.Context, since time.Time) ([]Ser
 	}
 	defer db.Close()
 
-	exportDates, err := c.fullBootstrapExportDates(db)
+	incomplete, ok, err := db.EarliestIncompleteBootstrap()
 	if err != nil {
 		return nil, err
 	}
-	for _, exportDate := range exportDates {
+	if ok {
+		c.logf("full bootstrap export=%s cursor=%d completed=%t", incomplete.ExportDate, incomplete.Cursor, incomplete.Completed)
+		if err := c.consumeExport(ctx, db, incomplete.ExportDate, incomplete.Cursor); err != nil {
+			return nil, err
+		}
+		return c.recordsFromStore(db)
+	}
+
+	hasCompleted, err := db.HasCompletedBootstrap()
+	if err != nil {
+		return nil, err
+	}
+	for _, exportDate := range c.exportDates() {
 		cursor, completed, err := db.Bootstrap(exportDate)
 		if err != nil {
 			return nil, err
 		}
 		c.logf("full bootstrap export=%s cursor=%d completed=%t", exportDate, cursor, completed)
-		if !completed {
-			if err := c.consumeExport(ctx, db, exportDate, cursor); err != nil {
+		if hasCompleted {
+			if err := c.syncExportDiff(ctx, db, exportDate); err != nil {
 				if errors.Is(err, errExportNotFound) && c.ExportDate == "" {
 					continue
 				}
 				return nil, err
 			}
-		} else if !since.IsZero() {
-			c.logf("full incremental since=%s", since.UTC().Format(time.RFC3339))
-			if err := c.refreshChangedSeries(ctx, db, since); err != nil {
+		} else {
+			if err := c.consumeExport(ctx, db, exportDate, cursor); err != nil {
+				if errors.Is(err, errExportNotFound) && c.ExportDate == "" {
+					continue
+				}
 				return nil, err
 			}
 		}
@@ -162,69 +158,9 @@ func (c *Client) fetchFullBootstrap(ctx context.Context, since time.Time) ([]Ser
 	return nil, errExportNotFound
 }
 
-func (c *Client) fullBootstrapExportDates(db *store.DB) ([]string, error) {
-	if c.ExportDate != "" {
-		return []string{c.ExportDate}, nil
-	}
-	incomplete, ok, err := db.EarliestIncompleteBootstrap()
-	if err != nil {
-		return nil, err
-	}
-	if ok {
-		return []string{incomplete.ExportDate}, nil
-	}
-	return c.exportDates(), nil
-}
-
-func (c *Client) refreshChangedSeries(ctx context.Context, db *store.DB, since time.Time) error {
-	ids, err := c.fetchChangedSeriesIDs(ctx, since)
-	if err != nil {
-		return err
-	}
-	c.logf("full incremental changed_ids=%d", len(ids))
-	for _, id := range ids {
-		record, err := c.fetchSeriesTranslationsByID(ctx, id)
-		if err != nil {
-			return err
-		}
-		now := time.Now().UTC()
-		if err := db.UpsertSeries(store.Series{
-			ID:         id,
-			Titles:     titlesFromRecord(record),
-			FetchedAt:  now,
-			LastSeenAt: now,
-		}); err != nil {
-			return err
-		}
-		c.wait(ctx)
-	}
-	return nil
-}
-
 func (c *Client) consumeExport(ctx context.Context, db *store.DB, exportDate string, cursor int) error {
 	c.logf("full bootstrap download export=%s", exportDate)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(c.exportBaseURL(), "/")+"/tv_series_ids_"+exportDate+".json.gz", nil)
-	if err != nil {
-		return err
-	}
-	resp, err := c.httpClient().Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden {
-		return errExportNotFound
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("TMDb export %s failed: %s: %s", exportDate, resp.Status, strings.TrimSpace(string(data)))
-	}
-	gz, err := gzip.NewReader(resp.Body)
-	if err != nil {
-		return err
-	}
-	defer gz.Close()
-	items, stats, err := c.readExportItems(gz)
+	items, stats, err := c.downloadExportItems(ctx, exportDate)
 	if err != nil {
 		return err
 	}
@@ -290,6 +226,132 @@ func (c *Client) consumeExport(ctx context.Context, db *store.DB, exportDate str
 	}
 	c.logf("full bootstrap completed export=%s cursor=%d processed=%d skipped=%d", exportDate, lastCursor, processedItems, skippedItems)
 	return db.SetBootstrap(exportDate, lastCursor, true)
+}
+
+func (c *Client) syncExportDiff(ctx context.Context, db *store.DB, exportDate string) error {
+	c.logf("full export diff download export=%s", exportDate)
+	items, stats, err := c.downloadExportItems(ctx, exportDate)
+	if err != nil {
+		return err
+	}
+	c.logf(
+		"full bootstrap export_stats export=%s total=%d fetchable=%d remaining_fetchable=%d skipped=%d adult=%d invalid=%d below_min_popularity=%d min_popularity=%g",
+		exportDate,
+		stats.Total,
+		stats.Fetchable,
+		stats.Fetchable,
+		stats.Skipped(),
+		stats.Adult,
+		stats.Invalid,
+		stats.BelowMinPopularity,
+		c.MinPopularity,
+	)
+
+	current, err := db.SeriesPopularities()
+	if err != nil {
+		return err
+	}
+	exportPopularities := make(map[int]float64, stats.Fetchable)
+	exportOrder := make([]int, 0, stats.Fetchable)
+	for _, item := range items {
+		if c.shouldSkipExportItem(item) {
+			continue
+		}
+		if _, exists := exportPopularities[item.ID]; !exists {
+			exportOrder = append(exportOrder, item.ID)
+		}
+		exportPopularities[item.ID] = item.Popularity
+	}
+
+	var addedIDs []int
+	popularityUpdated := 0
+	unchanged := 0
+	for _, id := range exportOrder {
+		popularity := exportPopularities[id]
+		currentPopularity, exists := current[id]
+		if !exists {
+			addedIDs = append(addedIDs, id)
+			continue
+		}
+		if currentPopularity != popularity {
+			if err := db.UpdateSeriesPopularity(id, popularity); err != nil {
+				return err
+			}
+			popularityUpdated++
+			continue
+		}
+		unchanged++
+	}
+
+	processed := 0
+	for _, id := range addedIDs {
+		record, err := c.fetchSeriesTranslationsByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		if err := db.UpsertSeries(store.Series{
+			ID:         id,
+			Popularity: exportPopularities[id],
+			Titles:     titlesFromRecord(record),
+			FetchedAt:  now,
+			LastSeenAt: now,
+		}); err != nil {
+			return err
+		}
+		processed++
+		if processed%50 == 0 || processed == len(addedIDs) {
+			c.logf("full translations progress processed=%d total=%d", processed, len(addedIDs))
+		}
+		c.wait(ctx)
+	}
+
+	var removedIDs []int
+	for id := range current {
+		if _, exists := exportPopularities[id]; !exists {
+			removedIDs = append(removedIDs, id)
+		}
+	}
+	sort.Ints(removedIDs)
+	for _, id := range removedIDs {
+		if err := db.DeleteSeries(id); err != nil {
+			return err
+		}
+	}
+	c.logf(
+		"full export diff export=%s added=%d removed=%d popularity_updated=%d unchanged=%d",
+		exportDate,
+		len(addedIDs),
+		len(removedIDs),
+		popularityUpdated,
+		unchanged,
+	)
+	return db.SetBootstrap(exportDate, len(items), true)
+}
+
+func (c *Client) downloadExportItems(ctx context.Context, exportDate string) ([]exportSeries, exportStats, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(c.exportBaseURL(), "/")+"/tv_series_ids_"+exportDate+".json.gz", nil)
+	if err != nil {
+		return nil, exportStats{}, err
+	}
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return nil, exportStats{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden {
+		return nil, exportStats{}, errExportNotFound
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(resp.Body)
+		return nil, exportStats{}, fmt.Errorf("TMDb export %s failed: %s: %s", exportDate, resp.Status, strings.TrimSpace(string(data)))
+	}
+	gz, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		return nil, exportStats{}, err
+	}
+	defer gz.Close()
+	return c.readExportItems(gz)
 }
 
 type exportStats struct {
@@ -378,37 +440,6 @@ func (c *Client) recordsFromStore(db *store.DB) ([]SeriesRecord, error) {
 	return records, nil
 }
 
-func (c *Client) fetchDiscoverPages(ctx context.Context) ([]SeriesRecord, error) {
-	seen := make(map[int]bool)
-	var records []SeriesRecord
-	for page := 1; page <= 1; page++ {
-		q := url.Values{
-			"include_adult":                []string{"false"},
-			"include_null_first_air_dates": []string{"false"},
-			"language":                     []string{c.primaryLanguage()},
-			"page":                         []string{strconv.Itoa(page)},
-			"sort_by":                      []string{"popularity.desc"},
-		}
-		var resp discoverResponse
-		if err := c.request(ctx, http.MethodGet, "/discover/tv", q, &resp); err != nil {
-			return nil, err
-		}
-		for _, item := range resp.Results {
-			if item.ID <= 0 || seen[item.ID] {
-				continue
-			}
-			seen[item.ID] = true
-			record := item.toRecord()
-			c.attachTranslations(ctx, &record)
-			records = append(records, record)
-		}
-		if resp.TotalPages > 0 && page >= resp.TotalPages {
-			break
-		}
-	}
-	return records, nil
-}
-
 func (c *Client) fetchCommonListItems(ctx context.Context) ([]seriesAPIRecord, error) {
 	var items []seriesAPIRecord
 	c.logf("popular bootstrap start sources=%d", len(c.PopularSources))
@@ -430,56 +461,6 @@ func (c *Client) fetchCommonListItems(ctx context.Context) ([]seriesAPIRecord, e
 		}
 	}
 	return items, nil
-}
-
-func (c *Client) fetchChangedSeriesIDs(ctx context.Context, since time.Time) ([]int, error) {
-	seen := make(map[int]bool)
-	var ids []int
-	for _, window := range changeWindows(since, time.Now().UTC()) {
-		for page := 1; page <= 1; page++ {
-			q := url.Values{
-				"start_date": []string{window.start.Format("2006-01-02")},
-				"end_date":   []string{window.end.Format("2006-01-02")},
-				"page":       []string{strconv.Itoa(page)},
-			}
-			var resp changesResponse
-			if err := c.request(ctx, http.MethodGet, "/tv/changes", q, &resp); err != nil {
-				return nil, err
-			}
-			for _, item := range resp.Results {
-				if item.ID > 0 && !seen[item.ID] {
-					seen[item.ID] = true
-					ids = append(ids, item.ID)
-				}
-			}
-			if resp.TotalPages > 0 && page >= resp.TotalPages {
-				break
-			}
-		}
-	}
-	return ids, nil
-}
-
-func (c *Client) fetchSeriesByID(ctx context.Context, id int) (SeriesRecord, error) {
-	q := url.Values{"language": []string{c.primaryLanguage()}}
-	var resp seriesAPIRecord
-	if err := c.request(ctx, http.MethodGet, fmt.Sprintf("/tv/%d", id), q, &resp); err != nil {
-		return SeriesRecord{}, err
-	}
-	record := resp.toRecord()
-	c.attachTranslations(ctx, &record)
-	return record, nil
-}
-
-func (c *Client) attachTranslations(ctx context.Context, record *SeriesRecord) {
-	if record.Translations == nil {
-		record.Translations = make(map[string]Translation)
-	}
-	var resp translationsResponse
-	if err := c.request(ctx, http.MethodGet, fmt.Sprintf("/tv/%d/translations", record.ID), nil, &resp); err != nil {
-		return
-	}
-	attachTranslationResponse(record, resp, c.Languages)
 }
 
 func (c *Client) request(ctx context.Context, method, path string, q url.Values, out any) error {
@@ -609,14 +590,6 @@ type discoverResponse struct {
 	TotalPages int               `json:"total_pages"`
 }
 
-type changesResponse struct {
-	Page    int `json:"page"`
-	Results []struct {
-		ID int `json:"id"`
-	} `json:"results"`
-	TotalPages int `json:"total_pages"`
-}
-
 type translationsResponse struct {
 	ID           int `json:"id"`
 	Translations []struct {
@@ -630,25 +603,8 @@ type translationsResponse struct {
 }
 
 type seriesAPIRecord struct {
-	ID           int     `json:"id"`
-	Name         string  `json:"name"`
-	OriginalName string  `json:"original_name"`
-	Popularity   float64 `json:"popularity"`
-}
-
-func (r seriesAPIRecord) toRecord() SeriesRecord {
-	name := strings.TrimSpace(r.Name)
-	if name == "" {
-		name = strings.TrimSpace(r.OriginalName)
-	}
-	record := SeriesRecord{
-		ID:   r.ID,
-		Name: name,
-	}
-	if originalName := strings.TrimSpace(r.OriginalName); originalName != "" && originalName != name {
-		record.Aliases = append(record.Aliases, Alias{Name: originalName})
-	}
-	return record
+	ID         int     `json:"id"`
+	Popularity float64 `json:"popularity"`
 }
 
 func normalTMDBLanguage(language, country string) string {
@@ -718,32 +674,4 @@ func retryAfter(value string) (time.Duration, bool) {
 		return 0, false
 	}
 	return time.Duration(seconds) * time.Second, true
-}
-
-type changeWindow struct {
-	start time.Time
-	end   time.Time
-}
-
-func changeWindows(start, end time.Time) []changeWindow {
-	start = dateOnly(start.UTC())
-	end = dateOnly(end.UTC())
-	if start.After(end) {
-		return []changeWindow{{start: end, end: end}}
-	}
-	var out []changeWindow
-	for current := start; !current.After(end); {
-		windowEnd := current.AddDate(0, 0, 14)
-		if windowEnd.After(end) {
-			windowEnd = end
-		}
-		out = append(out, changeWindow{start: current, end: windowEnd})
-		current = windowEnd.AddDate(0, 0, 1)
-	}
-	return out
-}
-
-func dateOnly(t time.Time) time.Time {
-	y, m, d := t.Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }

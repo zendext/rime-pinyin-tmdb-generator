@@ -200,6 +200,18 @@ LIMIT 1
 	return status, true, nil
 }
 
+func (d *DB) HasCompletedBootstrap() (bool, error) {
+	row := d.db.QueryRow(`SELECT 1 FROM bootstrap_state WHERE completed = 1 LIMIT 1`)
+	var value int
+	if err := row.Scan(&value); err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 func (d *DB) SeriesCount() (int, error) {
 	row := d.db.QueryRow(`SELECT COUNT(*) FROM series`)
 	var count int
@@ -239,6 +251,37 @@ ON CONFLICT(tmdb_id, language) DO UPDATE SET
 		}
 	}
 	return tx.Commit()
+}
+
+func (d *DB) UpdateSeriesPopularity(id int, popularity float64) error {
+	_, err := d.db.Exec(`UPDATE series SET popularity = ? WHERE tmdb_id = ?`, popularity, id)
+	return err
+}
+
+func (d *DB) DeleteSeries(id int) error {
+	_, err := d.db.Exec(`DELETE FROM series WHERE tmdb_id = ?`, id)
+	return err
+}
+
+func (d *DB) SeriesPopularities() (map[int]float64, error) {
+	rows, err := d.db.Query(`SELECT tmdb_id, popularity FROM series`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[int]float64)
+	for rows.Next() {
+		var id int
+		var popularity float64
+		if err := rows.Scan(&id, &popularity); err != nil {
+			return nil, err
+		}
+		out[id] = popularity
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (d *DB) AllSeries() ([]Series, error) {
