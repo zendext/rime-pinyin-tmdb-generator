@@ -16,15 +16,21 @@ type Fetcher interface {
 	FetchSeries(ctx context.Context, since time.Time) ([]tmdb.SeriesRecord, error)
 }
 
+type MovieFetcher interface {
+	FetchMovies(ctx context.Context, since time.Time) ([]tmdb.SeriesRecord, error)
+}
+
 type Options struct {
-	StorePath string
-	DictPath  string
-	Mode      string
-	Languages []string
-	Fetcher   Fetcher
-	Encoder   rime.Encoder
-	Overrides map[string]string
-	Now       func() time.Time
+	StorePath      string
+	MovieStorePath string
+	DictPath       string
+	Mode           string
+	Languages      []string
+	Fetcher        Fetcher
+	MovieFetcher   MovieFetcher
+	Encoder        rime.Encoder
+	Overrides      map[string]string
+	Now            func() time.Time
 }
 
 type Result struct {
@@ -38,6 +44,63 @@ func Generate(ctx context.Context, opts Options) (Result, error) {
 	now := time.Now
 	if opts.Now != nil {
 		now = opts.Now
+	}
+	tvResult, err := generateSeriesDictionaries(ctx, seriesGenerateOptions{
+		StorePath:   opts.StorePath,
+		DictPath:    opts.DictPath,
+		GroupPrefix: dictionaryPrefix(opts.Mode),
+		Languages:   opts.Languages,
+		Fetch:       opts.Fetcher.FetchSeries,
+		Encoder:     opts.Encoder,
+		Overrides:   opts.Overrides,
+		Now:         now,
+	})
+	if err != nil {
+		return Result{}, err
+	}
+	result := Result{
+		EntryCount: tvResult.EntryCount,
+		DictPath:   opts.DictPath,
+		DictPaths:  append([]string(nil), tvResult.DictPaths...),
+		StorePath:  opts.StorePath,
+	}
+	if strings.TrimSpace(opts.Mode) == "full" && opts.MovieFetcher != nil && strings.TrimSpace(opts.MovieStorePath) != "" {
+		movieResult, err := generateSeriesDictionaries(ctx, seriesGenerateOptions{
+			StorePath:   opts.MovieStorePath,
+			DictPath:    opts.DictPath,
+			GroupPrefix: "tmdb_movie",
+			Languages:   opts.Languages,
+			Fetch:       opts.MovieFetcher.FetchMovies,
+			Encoder:     opts.Encoder,
+			Overrides:   opts.Overrides,
+			Now:         now,
+		})
+		if err != nil {
+			return Result{}, err
+		}
+		result.EntryCount += movieResult.EntryCount
+		result.DictPaths = append(result.DictPaths, movieResult.DictPaths...)
+	}
+	return result, nil
+}
+
+type seriesFetchFunc func(context.Context, time.Time) ([]tmdb.SeriesRecord, error)
+
+type seriesGenerateOptions struct {
+	StorePath   string
+	DictPath    string
+	GroupPrefix string
+	Languages   []string
+	Fetch       seriesFetchFunc
+	Encoder     rime.Encoder
+	Overrides   map[string]string
+	Now         func() time.Time
+}
+
+func generateSeriesDictionaries(ctx context.Context, opts seriesGenerateOptions) (Result, error) {
+	now := opts.Now
+	if now == nil {
+		now = time.Now
 	}
 	db, err := store.Open(opts.StorePath)
 	if err != nil {
@@ -53,11 +116,11 @@ func Generate(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, err
 	}
 
-	records, err := opts.Fetcher.FetchSeries(ctx, st.LastSuccessfulFetchAt)
+	records, err := opts.Fetch(ctx, st.LastSuccessfulFetchAt)
 	if err != nil {
 		return Result{}, err
 	}
-	selectedGroups := dictionaryGroups(opts.Mode, opts.Languages)
+	selectedGroups := dictionaryGroups(opts.GroupPrefix, opts.Languages)
 	groups := tmdb.ExtractChineseTitleGroups(records, selectedGroups)
 	dictPaths := make([]string, 0, len(groups))
 	written := make(map[string]bool, len(groups))
@@ -85,7 +148,7 @@ func Generate(ctx context.Context, opts Options) (Result, error) {
 		written[dictPath] = true
 		totalEntries += len(words)
 	}
-	for _, group := range allDictionaryGroups(opts.Mode) {
+	for _, group := range allDictionaryGroups(opts.GroupPrefix) {
 		dictPath := dictionaryPath(opts.DictPath, group.Name)
 		if written[dictPath] {
 			continue
@@ -115,8 +178,8 @@ func atomicWrite(path string, data []byte, perm os.FileMode) error {
 	return os.Rename(tmp, path)
 }
 
-func dictionaryGroups(mode string, languages []string) []tmdb.TitleGroup {
-	all := allDictionaryGroups(mode)
+func dictionaryGroups(prefix string, languages []string) []tmdb.TitleGroup {
+	all := allDictionaryGroups(prefix)
 	if len(languages) == 0 {
 		return all
 	}
@@ -136,8 +199,7 @@ func dictionaryGroups(mode string, languages []string) []tmdb.TitleGroup {
 	return groups
 }
 
-func allDictionaryGroups(mode string) []tmdb.TitleGroup {
-	prefix := dictionaryPrefix(mode)
+func allDictionaryGroups(prefix string) []tmdb.TitleGroup {
 	return []tmdb.TitleGroup{
 		{Name: prefix + "_hans", Languages: []string{"zh-CN"}},
 		{Name: prefix + "_hant", Languages: []string{"zh-TW", "zh-HK"}},

@@ -167,6 +167,7 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 		"popular_pages = 10",
 		"top_rated_pages = 10",
 		"min_popularity = 10",
+		"movie_min_popularity = 15",
 		"request_interval = \"50ms\"",
 	} {
 		if !strings.Contains(configText, want) {
@@ -218,6 +219,9 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 	if !strings.Contains(readme, "min_popularity = 10") || !strings.Contains(readme, "popularity >= min_popularity") {
 		t.Fatal("README should document full min_popularity filtering")
 	}
+	if !strings.Contains(readme, "movie_min_popularity = 15") || !strings.Contains(readme, "popularity >= movie_min_popularity") {
+		t.Fatal("README should document full movie_min_popularity filtering")
+	}
 	for _, want := range []string{
 		"流行度阈值",
 		"不要在同一个未完成的 full bootstrap 中途修改",
@@ -242,6 +246,7 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 		"SQLite store 默认按模式分开",
 		"series-popular.sqlite",
 		"series-full.sqlite",
+		"movies-full.sqlite",
 		"同时保留两种模式的进度和生成状态",
 	} {
 		if !strings.Contains(readme, want) {
@@ -253,8 +258,11 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 		"tmdb_popular_hant.dict.yaml",
 		"tmdb_full_hans.dict.yaml",
 		"tmdb_full_hant.dict.yaml",
+		"tmdb_movie_hans.dict.yaml",
+		"tmdb_movie_hant.dict.yaml",
 		"tmdb_popular_hans",
 		"tmdb_full_hans",
+		"tmdb_movie_hans",
 		"没有配置繁体语言时，不会生成 `_hant` 词典",
 	} {
 		if !strings.Contains(readme, want) {

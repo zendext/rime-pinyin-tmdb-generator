@@ -12,6 +12,7 @@ lock_path = "~/.local/state/rime-pinyin-tmdb-generator/update.lock"
 mode = "full"
 request_interval = "50ms"
 min_popularity = 10
+movie_min_popularity = 15
 
 [bootstrap.popular]
 trending_week_pages = 5

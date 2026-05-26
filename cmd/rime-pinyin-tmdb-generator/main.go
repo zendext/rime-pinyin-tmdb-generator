@@ -184,17 +184,19 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	client := &tmdb.Client{
-		BaseURL:         cfg.TMDB.BaseURL,
-		APIKey:          cfg.TMDB.APIKey,
-		Languages:       cfg.TMDB.Languages,
-		BootstrapMode:   cfg.Bootstrap.Mode,
-		PopularSources:  popularSources(cfg.Bootstrap.Popular),
-		ExportBaseURL:   cfg.Bootstrap.ExportBaseURL,
-		ExportDate:      cfg.Bootstrap.ExportDate,
-		StorePath:       cfg.Store.Path,
-		RequestInterval: cfg.Bootstrap.RequestInterval.Std(),
-		MaxItems:        cfg.Bootstrap.MaxItems,
-		MinPopularity:   cfg.Bootstrap.MinPopularity,
+		BaseURL:            cfg.TMDB.BaseURL,
+		APIKey:             cfg.TMDB.APIKey,
+		Languages:          cfg.TMDB.Languages,
+		BootstrapMode:      cfg.Bootstrap.Mode,
+		PopularSources:     popularSources(cfg.Bootstrap.Popular),
+		ExportBaseURL:      cfg.Bootstrap.ExportBaseURL,
+		ExportDate:         cfg.Bootstrap.ExportDate,
+		StorePath:          cfg.Store.Path,
+		MovieStorePath:     cfg.Store.MoviePath,
+		RequestInterval:    cfg.Bootstrap.RequestInterval.Std(),
+		MaxItems:           cfg.Bootstrap.MaxItems,
+		MinPopularity:      cfg.Bootstrap.MinPopularity,
+		MovieMinPopularity: cfg.Bootstrap.MovieMinPopularity,
 		Logf: func(format string, args ...any) {
 			fmt.Fprintf(stdout, format+"\n", args...)
 		},
@@ -206,13 +208,15 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	}
 	defer cancel()
 	result, err := app.Generate(ctx, app.Options{
-		StorePath: cfg.Store.Path,
-		DictPath:  cfg.Output.DictPath,
-		Mode:      cfg.Bootstrap.Mode,
-		Languages: cfg.TMDB.Languages,
-		Fetcher:   client,
-		Encoder:   pinyin.NewEncoder(),
-		Overrides: overrides,
+		StorePath:      cfg.Store.Path,
+		MovieStorePath: cfg.Store.MoviePath,
+		DictPath:       cfg.Output.DictPath,
+		Mode:           cfg.Bootstrap.Mode,
+		Languages:      cfg.TMDB.Languages,
+		Fetcher:        client,
+		MovieFetcher:   client,
+		Encoder:        pinyin.NewEncoder(),
+		Overrides:      overrides,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "generate: %v\n", err)

@@ -133,7 +133,7 @@ func TestApplyModeDefaultsUsesFinalModeUnlessStorePathIsExplicit(t *testing.T) {
 
 func TestLoadUsesFullBootstrapAndStoreConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
-	data := []byte("[store]\npath = \"~/state/series.sqlite\"\n[bootstrap]\nmode = \"full\"\nexport_date = \"05_26_2026\"\nrequest_interval = \"200ms\"\nmax_items = 100\nmin_popularity = 12.5\n")
+	data := []byte("[store]\npath = \"~/state/series.sqlite\"\nmovie_path = \"~/state/movies.sqlite\"\n[bootstrap]\nmode = \"full\"\nexport_date = \"05_26_2026\"\nrequest_interval = \"200ms\"\nmax_items = 100\nmin_popularity = 12.5\nmovie_min_popularity = 17.5\n")
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -157,12 +157,18 @@ func TestLoadUsesFullBootstrapAndStoreConfig(t *testing.T) {
 	if got.Bootstrap.MinPopularity != 12.5 {
 		t.Fatalf("unexpected min popularity: %v", got.Bootstrap.MinPopularity)
 	}
+	if got.Bootstrap.MovieMinPopularity != 17.5 {
+		t.Fatalf("unexpected movie min popularity: %v", got.Bootstrap.MovieMinPopularity)
+	}
 	if strings.HasPrefix(got.Store.Path, "~") {
 		t.Fatalf("expected store path expansion, got %q", got.Store.Path)
 	}
+	if strings.HasPrefix(got.Store.MoviePath, "~") {
+		t.Fatalf("expected movie store path expansion, got %q", got.Store.MoviePath)
+	}
 }
 
-func TestDefaultFullBootstrapMinPopularityIsTen(t *testing.T) {
+func TestDefaultFullBootstrapPopularityThresholdsAndStores(t *testing.T) {
 	got := Default()
 	if got.Bootstrap.Mode != "full" {
 		t.Fatalf("expected default bootstrap mode full, got %q", got.Bootstrap.Mode)
@@ -173,7 +179,13 @@ func TestDefaultFullBootstrapMinPopularityIsTen(t *testing.T) {
 	if got.Bootstrap.MinPopularity != 10 {
 		t.Fatalf("expected default min popularity 10, got %v", got.Bootstrap.MinPopularity)
 	}
+	if got.Bootstrap.MovieMinPopularity != 15 {
+		t.Fatalf("expected default movie min popularity 15, got %v", got.Bootstrap.MovieMinPopularity)
+	}
 	if !strings.HasSuffix(got.Store.Path, filepath.Join("rime-pinyin-tmdb-generator", "series-full.sqlite")) {
 		t.Fatalf("expected default store path to use full mode, got %q", got.Store.Path)
+	}
+	if !strings.HasSuffix(got.Store.MoviePath, filepath.Join("rime-pinyin-tmdb-generator", "movies-full.sqlite")) {
+		t.Fatalf("expected default movie store path to use full mode, got %q", got.Store.MoviePath)
 	}
 }

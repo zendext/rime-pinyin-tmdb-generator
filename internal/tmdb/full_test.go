@@ -458,3 +458,73 @@ func TestClientFullCompletedBootstrapDiffsDailyExport(t *testing.T) {
 		}
 	}
 }
+
+func TestClientMovieFullBootstrapUsesMovieExportTranslationsAndFilters(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		switch r.URL.Path {
+		case "/p/exports/movie_ids_05_26_2026.json.gz":
+			w.Header().Set("Content-Type", "application/gzip")
+			gz := gzip.NewWriter(w)
+			fmt.Fprintln(gz, `{"id":0,"popularity":100,"adult":false,"video":false}`)
+			fmt.Fprintln(gz, `{"id":201,"popularity":15,"adult":false,"video":false}`)
+			fmt.Fprintln(gz, `{"id":202,"popularity":14.9,"adult":false,"video":false}`)
+			fmt.Fprintln(gz, `{"id":203,"popularity":30,"adult":true,"video":false}`)
+			fmt.Fprintln(gz, `{"id":204,"popularity":30,"adult":false,"video":true}`)
+			if err := gz.Close(); err != nil {
+				t.Fatal(err)
+			}
+		case "/3/movie/201/translations":
+			writeJSON(t, w, translationPayload(201, "虚构电影"))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := &Client{
+		BaseURL:            server.URL + "/3",
+		APIKey:             "test-key",
+		Languages:          []string{"zh-CN"},
+		HTTP:               server.Client(),
+		BootstrapMode:      "full",
+		ExportBaseURL:      server.URL + "/p/exports",
+		ExportDate:         "05_26_2026",
+		StorePath:          filepath.Join(t.TempDir(), "series.sqlite"),
+		MovieStorePath:     filepath.Join(t.TempDir(), "movies.sqlite"),
+		RequestInterval:    0,
+		MinPopularity:      10,
+		MovieMinPopularity: 15,
+	}
+
+	got, err := client.FetchMovies(context.Background(), time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []SeriesRecord{{
+		ID: 201,
+		Translations: map[string]Translation{
+			"zh-CN": {Name: "虚构电影"},
+		},
+	}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("records mismatch\nwant: %#v\n got: %#v", want, got)
+	}
+	wantPaths := []string{"/p/exports/movie_ids_05_26_2026.json.gz", "/3/movie/201/translations"}
+	if !reflect.DeepEqual(paths, wantPaths) {
+		t.Fatalf("unexpected paths: %#v", paths)
+	}
+
+	got, err = client.FetchMovies(context.Background(), time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected stored movie on second run, got %#v", got)
+	}
+	wantPaths = append(wantPaths, "/p/exports/movie_ids_05_26_2026.json.gz")
+	if !reflect.DeepEqual(paths, wantPaths) {
+		t.Fatalf("second run should diff completed movie store against daily export, paths=%#v", paths)
+	}
+}

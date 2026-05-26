@@ -32,18 +32,21 @@ type OutputConfig struct {
 }
 
 type StoreConfig struct {
-	Path         string `toml:"path"`
-	PathExplicit bool   `toml:"-"`
+	Path              string `toml:"path"`
+	MoviePath         string `toml:"movie_path"`
+	PathExplicit      bool   `toml:"-"`
+	MoviePathExplicit bool   `toml:"-"`
 }
 
 type BootstrapConfig struct {
-	Mode            string        `toml:"mode"`
-	Popular         PopularConfig `toml:"popular"`
-	ExportDate      string        `toml:"export_date"`
-	ExportBaseURL   string        `toml:"export_base_url"`
-	RequestInterval Duration      `toml:"request_interval"`
-	MaxItems        int           `toml:"max_items"`
-	MinPopularity   float64       `toml:"min_popularity"`
+	Mode               string        `toml:"mode"`
+	Popular            PopularConfig `toml:"popular"`
+	ExportDate         string        `toml:"export_date"`
+	ExportBaseURL      string        `toml:"export_base_url"`
+	RequestInterval    Duration      `toml:"request_interval"`
+	MaxItems           int           `toml:"max_items"`
+	MinPopularity      float64       `toml:"min_popularity"`
+	MovieMinPopularity float64       `toml:"movie_min_popularity"`
 }
 
 type PopularConfig struct {
@@ -72,13 +75,15 @@ func Default() Config {
 			LockPath: filepath.Join(baseState, "update.lock"),
 		},
 		Store: StoreConfig{
-			Path: filepath.Join(baseState, "series-full.sqlite"),
+			Path:      filepath.Join(baseState, "series-full.sqlite"),
+			MoviePath: filepath.Join(baseState, "movies-full.sqlite"),
 		},
 		Bootstrap: BootstrapConfig{
-			Mode:            "full",
-			Popular:         PopularConfig{TrendingWeekPages: 5, PopularPages: 10, TopRatedPages: 10},
-			RequestInterval: Duration(50 * time.Millisecond),
-			MinPopularity:   10,
+			Mode:               "full",
+			Popular:            PopularConfig{TrendingWeekPages: 5, PopularPages: 10, TopRatedPages: 10},
+			RequestInterval:    Duration(50 * time.Millisecond),
+			MinPopularity:      10,
+			MovieMinPopularity: 15,
 		},
 		Overrides: filepath.Join(baseConfig, "overrides.yaml"),
 	}
@@ -91,6 +96,7 @@ func DefaultPath() string {
 func Load(path string) (Config, error) {
 	cfg := Default()
 	storePathExplicit := false
+	movieStorePathExplicit := false
 	if path == "" {
 		path = DefaultPath()
 	}
@@ -100,10 +106,12 @@ func Load(path string) (Config, error) {
 			return Config{}, err
 		}
 		storePathExplicit = meta.IsDefined("store", "path")
+		movieStorePathExplicit = meta.IsDefined("store", "movie_path")
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return Config{}, err
 	}
 	cfg.Store.PathExplicit = storePathExplicit
+	cfg.Store.MoviePathExplicit = movieStorePathExplicit
 	applyEnv(&cfg)
 	ApplyModeDefaults(&cfg)
 	expandPaths(&cfg)
@@ -111,10 +119,12 @@ func Load(path string) (Config, error) {
 }
 
 func ApplyModeDefaults(cfg *Config) {
-	if cfg.Store.PathExplicit {
-		return
+	if !cfg.Store.PathExplicit {
+		cfg.Store.Path = defaultStorePath(cfg.Bootstrap.Mode)
 	}
-	cfg.Store.Path = defaultStorePath(cfg.Bootstrap.Mode)
+	if !cfg.Store.MoviePathExplicit {
+		cfg.Store.MoviePath = defaultMovieStorePath()
+	}
 }
 
 func LoadOverrides(path string) (map[string]string, error) {
@@ -172,6 +182,7 @@ func expandPaths(cfg *Config) {
 	cfg.Output.DictPath = expandHome(cfg.Output.DictPath)
 	cfg.Output.LockPath = expandHome(cfg.Output.LockPath)
 	cfg.Store.Path = expandHome(cfg.Store.Path)
+	cfg.Store.MoviePath = expandHome(cfg.Store.MoviePath)
 	cfg.Overrides = expandHome(cfg.Overrides)
 }
 
@@ -183,6 +194,12 @@ func defaultStorePath(mode string) string {
 		return filepath.Join(baseState, "series-full.sqlite")
 	}
 	return filepath.Join(baseState, "series-popular.sqlite")
+}
+
+func defaultMovieStorePath() string {
+	stateDir := xdg("XDG_STATE_HOME", filepath.Join(homeDir(), ".local", "state"))
+	baseState := filepath.Join(stateDir, "rime-pinyin-tmdb-generator")
+	return filepath.Join(baseState, "movies-full.sqlite")
 }
 
 type Duration time.Duration

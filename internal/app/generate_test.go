@@ -23,6 +23,16 @@ func (f *fakeFetcher) FetchSeries(ctx context.Context, since time.Time) ([]tmdb.
 	return f.records, nil
 }
 
+type fakeMovieFetcher struct {
+	records []tmdb.SeriesRecord
+	since   time.Time
+}
+
+func (f *fakeMovieFetcher) FetchMovies(ctx context.Context, since time.Time) ([]tmdb.SeriesRecord, error) {
+	f.since = since
+	return f.records, nil
+}
+
 func TestGenerateWritesDictionaryAndAdvancesStateAfterSuccess(t *testing.T) {
 	dir := t.TempDir()
 	storePath := filepath.Join(dir, "series.sqlite")
@@ -159,6 +169,72 @@ func TestGenerateUsesModeSpecificDictionaryNames(t *testing.T) {
 	}
 	hansData := mustReadFile(t, hansPath)
 	mustContainText(t, hansData, "name: tmdb_full_hans")
+}
+
+func TestGenerateWritesMovieDictionariesSeparatelyInFullMode(t *testing.T) {
+	dir := t.TempDir()
+	storePath := filepath.Join(dir, "series.sqlite")
+	movieStorePath := filepath.Join(dir, "movies.sqlite")
+	outputPath := filepath.Join(dir, "tmdb.dict.yaml")
+	staleMovieHantPath := filepath.Join(dir, "tmdb_movie_hant.dict.yaml")
+	if err := os.WriteFile(staleMovieHantPath, []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fetcher := &fakeFetcher{records: []tmdb.SeriesRecord{{
+		ID:   1,
+		Name: "虚构剧集",
+	}}}
+	movieFetcher := &fakeMovieFetcher{records: []tmdb.SeriesRecord{{
+		ID:   201,
+		Name: "虚构电影",
+	}}}
+	movieSince := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
+	db, err := store.Open(movieStorePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveRunState(store.RunState{LastSuccessfulFetchAt: movieSince}); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	result, err := Generate(context.Background(), Options{
+		StorePath:      storePath,
+		MovieStorePath: movieStorePath,
+		DictPath:       outputPath,
+		Mode:           "full",
+		Languages:      []string{"zh-CN"},
+		Fetcher:        fetcher,
+		MovieFetcher:   movieFetcher,
+		Encoder: fakeEncoder{
+			"虚构剧集": "xu gou ju ji",
+			"虚构电影": "xu gou dian ying",
+		},
+		Now: func() time.Time { return time.Date(2026, 5, 26, 12, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.EntryCount != 2 {
+		t.Fatalf("expected total entry count 2, got %d", result.EntryCount)
+	}
+
+	tvData := mustReadFile(t, filepath.Join(dir, "tmdb_full_hans.dict.yaml"))
+	mustContainText(t, tvData, "name: tmdb_full_hans")
+	mustContainText(t, tvData, "虚构剧集\txu gou ju ji\t90")
+	mustNotContainText(t, tvData, "虚构电影")
+
+	movieData := mustReadFile(t, filepath.Join(dir, "tmdb_movie_hans.dict.yaml"))
+	mustContainText(t, movieData, "name: tmdb_movie_hans")
+	mustContainText(t, movieData, "虚构电影\txu gou dian ying\t90")
+	mustNotContainText(t, movieData, "虚构剧集")
+
+	if _, err := os.Stat(staleMovieHantPath); !os.IsNotExist(err) {
+		t.Fatalf("movie hant dictionary should not be generated for zh-CN-only config, err=%v", err)
+	}
+	if !movieFetcher.since.Equal(movieSince) {
+		t.Fatalf("expected movie fetcher since %s, got %s", movieSince, movieFetcher.since)
+	}
 }
 
 func TestGenerateUsesLastSuccessfulFetchAtFromSQLiteStore(t *testing.T) {

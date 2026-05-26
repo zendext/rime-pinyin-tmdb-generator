@@ -47,6 +47,7 @@ lock_path = "~/.local/state/rime-pinyin-tmdb-generator/update.lock"
 mode = "full"
 request_interval = "50ms"
 min_popularity = 10
+movie_min_popularity = 15
 
 [bootstrap.popular]
 trending_week_pages = 5
@@ -61,17 +62,19 @@ SQLite store 默认按模式分开，通常不需要配置：
 
 - popular 模式：`~/.local/state/rime-pinyin-tmdb-generator/series-popular.sqlite`
 - full 模式：`~/.local/state/rime-pinyin-tmdb-generator/series-full.sqlite`
+- full 模式电影：`~/.local/state/rime-pinyin-tmdb-generator/movies-full.sqlite`
 
 这样可以同时保留两种模式的进度和生成状态。需要放到其他位置时，可以在配置里增加：
 
 ```toml
 [store]
 path = "/path/to/series.sqlite"
+movie_path = "/path/to/movies.sqlite"
 ```
 
-`bootstrap.mode = "full"` 是默认模式，会下载 TMDb Daily ID Export，并只处理 `popularity >= min_popularity` 的非成人 TV series，默认阈值是 `10`。通过过滤后，才会按 ID 逐个请求 `/tv/{id}/translations`。`50ms` 等于 20 rps；一次请求会返回所有配置语言的翻译，所以不会因为配置多个语言而成倍增加请求数。运行状态和进度都保存在 SQLite store 里，首次 bootstrap 遇到中断或 429 后下次运行会从 cursor 继续。首次 bootstrap 完成后，后续运行会重新下载最新可用 Daily Export，在本地和 SQLite store 做 diff：新增且达标的 ID 才会请求 `/tv/{id}/translations`，已存在的 ID 只更新 popularity，不再请求 translations，低于阈值、成人、无效或从 export 消失的条目会从 store 删除。
+`bootstrap.mode = "full"` 是默认模式，会下载 TMDb Daily ID Export。TV 会读取 `tv_series_ids_*`，只处理 `popularity >= min_popularity` 的非成人 TV series，默认阈值是 `10`，通过过滤后按 ID 请求 `/tv/{id}/translations`。full 模式还会读取 `movie_ids_*` 生成独立电影词库，只处理 `popularity >= movie_min_popularity` 的非成人、非 video movie，默认阈值是 `15`，通过过滤后按 ID 请求 `/movie/{id}/translations`。`50ms` 等于 20 rps；一次请求会返回所有配置语言的翻译，所以不会因为配置多个语言而成倍增加请求数。TV 和电影运行状态分别保存在独立 SQLite store 里。首次 bootstrap 遇到中断或 429 后下次运行会从 cursor 继续。首次 bootstrap 完成后，后续运行会重新下载最新可用 Daily Export，在本地和对应 SQLite store 做 diff：新增且达标的 ID 才会请求 translations，已存在的 ID 只更新 popularity，不再请求 translations，低于阈值、成人、无效、movie video 或从 export 消失的条目会从对应 store 删除。
 
-流行度阈值只在 full 扫描 Daily Export 时生效。断点续传保存的是 export 文件的 cursor，不会保存当时的 `min_popularity`，所以不要在同一个未完成的 full bootstrap 中途修改这个值：调低阈值不会自动回头补抓之前已跳过的条目。首次 bootstrap 完成后会通过 Daily Export 本地 diff 应用当前阈值，低于阈值或消失的条目会从 SQLite store 删除。
+流行度阈值只在 full 扫描 Daily Export 时生效。断点续传保存的是 export 文件的 cursor，不会保存当时的 `min_popularity` 或 `movie_min_popularity`，所以不要在同一个未完成的 full bootstrap 中途修改这些值：调低阈值不会自动回头补抓之前已跳过的条目。首次 bootstrap 完成后会通过 Daily Export 本地 diff 应用当前阈值，低于阈值或消失的条目会从 SQLite store 删除。
 
 如果要改成 popular 模式，可以配置：
 
@@ -117,6 +120,7 @@ rime-pinyin-tmdb-generator generate \
 
 - `zh-CN`：popular 模式为 `tmdb_popular_hans.dict.yaml`，full 模式为 `tmdb_full_hans.dict.yaml`
 - `zh-TW` / `zh-HK`：popular 模式为 `tmdb_popular_hant.dict.yaml`，full 模式为 `tmdb_full_hant.dict.yaml`
+- full 模式电影会额外生成 `tmdb_movie_hans.dict.yaml`，配置 `zh-TW` / `zh-HK` 时额外生成 `tmdb_movie_hant.dict.yaml`
 
 `dict_path` 只用于决定输出目录；文件名会按当前 `bootstrap.mode` 和 `languages` 自动派生。`hans` 为简体，来自 `zh-CN`；`hant` 为繁体，来自 `zh-TW` / `zh-HK`。没有配置繁体语言时，不会生成 `_hant` 词典。
 
@@ -134,7 +138,7 @@ import_tables:
   - tmdb_popular_hant
 ```
 
-full 模式则对应引入 `tmdb_full_hans` 或 `tmdb_full_hant`。
+full 模式 TV 对应引入 `tmdb_full_hans` 或 `tmdb_full_hant`。电影词库对应引入 `tmdb_movie_hans` 或 `tmdb_movie_hant`。
 
 工具会在 SQLite store 中保存运行状态。只有词典文件成功写入后，状态时间戳才会更新。
 
@@ -160,7 +164,7 @@ rime-pinyin-tmdb-generator.exe generate `
   --store "$env:LOCALAPPDATA\rime-pinyin-tmdb-generator\series.sqlite"
 ```
 
-无论在哪个平台，实际输出都会在同目录下按当前模式和语言生成，例如只配置 `languages = ["zh-CN"]` 时，full 模式只生成 `tmdb_full_hans.dict.yaml`。
+无论在哪个平台，实际输出都会在同目录下按当前模式和语言生成，例如只配置 `languages = ["zh-CN"]` 时，full 模式会生成 `tmdb_full_hans.dict.yaml` 和 `tmdb_movie_hans.dict.yaml`。
 
 ## 拼音修正
 
@@ -195,4 +199,4 @@ systemctl --user enable --now rime-pinyin-tmdb-generator-update.timer
 
 ## TMDb 使用说明
 
-TMDb API 可以免费用于非商业用途，但需要遵守 TMDb API Terms，包括标注 TMDb 来源、不得商业使用、不得长期缓存或再分发派生数据。这个工具只在用户本地生成词典；请不要把真实生成的 `tmdb_popular_hans.dict.yaml`、`tmdb_popular_hant.dict.yaml`、`tmdb_full_hans.dict.yaml` 或 `tmdb_full_hant.dict.yaml` 作为公开发布文件。
+TMDb API 可以免费用于非商业用途，但需要遵守 TMDb API Terms，包括标注 TMDb 来源、不得商业使用、不得长期缓存或再分发派生数据。这个工具只在用户本地生成词典；请不要把真实生成的 `tmdb_popular_hans.dict.yaml`、`tmdb_popular_hant.dict.yaml`、`tmdb_full_hans.dict.yaml`、`tmdb_full_hant.dict.yaml`、`tmdb_movie_hans.dict.yaml` 或 `tmdb_movie_hant.dict.yaml` 作为公开发布文件。
