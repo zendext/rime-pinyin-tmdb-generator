@@ -255,6 +255,7 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 		"tmdb_full_hant.dict.yaml",
 		"tmdb_popular_hans",
 		"tmdb_full_hans",
+		"没有配置繁体语言时，不会生成 `_hant` 词典",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Fatalf("README should document mode-specific dictionary name %q", want)

@@ -57,8 +57,10 @@ func Generate(ctx context.Context, opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	groups := tmdb.ExtractChineseTitleGroups(records, dictionaryGroups(opts.Mode))
+	selectedGroups := dictionaryGroups(opts.Mode, opts.Languages)
+	groups := tmdb.ExtractChineseTitleGroups(records, selectedGroups)
 	dictPaths := make([]string, 0, len(groups))
+	written := make(map[string]bool, len(groups))
 	totalEntries := 0
 	for _, group := range groups {
 		words := make([]rime.Word, 0, len(group.Titles))
@@ -80,7 +82,17 @@ func Generate(ctx context.Context, opts Options) (Result, error) {
 			return Result{}, err
 		}
 		dictPaths = append(dictPaths, dictPath)
+		written[dictPath] = true
 		totalEntries += len(words)
+	}
+	for _, group := range allDictionaryGroups(opts.Mode) {
+		dictPath := dictionaryPath(opts.DictPath, group.Name)
+		if written[dictPath] {
+			continue
+		}
+		if err := os.Remove(dictPath); err != nil && !os.IsNotExist(err) {
+			return Result{}, err
+		}
 	}
 
 	st.LastSuccessfulFetchAt = now().UTC()
@@ -103,7 +115,28 @@ func atomicWrite(path string, data []byte, perm os.FileMode) error {
 	return os.Rename(tmp, path)
 }
 
-func dictionaryGroups(mode string) []tmdb.TitleGroup {
+func dictionaryGroups(mode string, languages []string) []tmdb.TitleGroup {
+	all := allDictionaryGroups(mode)
+	if len(languages) == 0 {
+		return all
+	}
+	enabled := make(map[string]bool, len(languages))
+	for _, language := range languages {
+		if language = strings.ToLower(strings.TrimSpace(language)); language != "" {
+			enabled[language] = true
+		}
+	}
+	groups := make([]tmdb.TitleGroup, 0, 2)
+	if enabled["zh-cn"] {
+		groups = append(groups, all[0])
+	}
+	if enabled["zh-tw"] || enabled["zh-hk"] {
+		groups = append(groups, all[1])
+	}
+	return groups
+}
+
+func allDictionaryGroups(mode string) []tmdb.TitleGroup {
 	prefix := dictionaryPrefix(mode)
 	return []tmdb.TitleGroup{
 		{Name: prefix + "_hans", Languages: []string{"zh-CN"}},

@@ -113,12 +113,12 @@ rime-pinyin-tmdb-generator generate \
   --output ~/.local/share/rime-data/tmdb.dict.yaml
 ```
 
-生成器会按 `dict_path` 所在目录写出词典：
+生成器会按 `dict_path` 所在目录和 `languages` 写出词典：
 
-- popular 模式：`tmdb_popular_hans.dict.yaml` / `tmdb_popular_hant.dict.yaml`
-- full 模式：`tmdb_full_hans.dict.yaml` / `tmdb_full_hant.dict.yaml`
+- `zh-CN`：popular 模式为 `tmdb_popular_hans.dict.yaml`，full 模式为 `tmdb_full_hans.dict.yaml`
+- `zh-TW` / `zh-HK`：popular 模式为 `tmdb_popular_hant.dict.yaml`，full 模式为 `tmdb_full_hant.dict.yaml`
 
-`dict_path` 只用于决定输出目录；文件名会按当前 `bootstrap.mode` 自动派生。`hans` 为简体，来自 `zh-CN`；`hant` 为繁体，来自 `zh-TW` / `zh-HK`。
+`dict_path` 只用于决定输出目录；文件名会按当前 `bootstrap.mode` 和 `languages` 自动派生。`hans` 为简体，来自 `zh-CN`；`hant` 为繁体，来自 `zh-TW` / `zh-HK`。没有配置繁体语言时，不会生成 `_hant` 词典。
 
 popular 模式的简体用户在主 Rime 词典中引入：
 
@@ -160,7 +160,7 @@ rime-pinyin-tmdb-generator.exe generate `
   --store "$env:LOCALAPPDATA\rime-pinyin-tmdb-generator\series.sqlite"
 ```
 
-无论在哪个平台，实际输出都会在同目录下按当前模式生成，例如 popular 模式为 `tmdb_popular_hans.dict.yaml` 和 `tmdb_popular_hant.dict.yaml`，full 模式为 `tmdb_full_hans.dict.yaml` 和 `tmdb_full_hant.dict.yaml`。
+无论在哪个平台，实际输出都会在同目录下按当前模式和语言生成，例如只配置 `languages = ["zh-CN"]` 时，full 模式只生成 `tmdb_full_hans.dict.yaml`。
 
 ## 拼音修正
 

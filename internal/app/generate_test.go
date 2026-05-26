@@ -27,6 +27,10 @@ func TestGenerateWritesDictionaryAndAdvancesStateAfterSuccess(t *testing.T) {
 	dir := t.TempDir()
 	storePath := filepath.Join(dir, "series.sqlite")
 	outputPath := filepath.Join(dir, "tmdb.dict.yaml")
+	staleHantPath := filepath.Join(dir, "tmdb_popular_hant.dict.yaml")
+	if err := os.WriteFile(staleHantPath, []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	fetcher := &fakeFetcher{records: []tmdb.SeriesRecord{{
 		ID:   1,
 		Name: "虚构剧集",
@@ -57,6 +61,9 @@ func TestGenerateWritesDictionaryAndAdvancesStateAfterSuccess(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "虚构剧集\txu gou ju ji\t90") {
 		t.Fatalf("generated dictionary missing expected entry:\n%s", data)
+	}
+	if _, err := os.Stat(staleHantPath); !os.IsNotExist(err) {
+		t.Fatalf("hant dictionary should not be generated for zh-CN-only config, err=%v", err)
 	}
 	db, err := store.Open(storePath)
 	if err != nil {
