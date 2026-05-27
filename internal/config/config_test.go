@@ -24,7 +24,7 @@ func TestLoadOverridesAcceptsSimpleAndObjectEntries(t *testing.T) {
 
 func TestLoadExpandsTildePaths(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
-	data := []byte("[output]\ndict_path = \"~/rime-data/tmdb.dict.yaml\"\n")
+	data := []byte("[output]\ndir = \"~/rime-data\"\n")
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -32,8 +32,8 @@ func TestLoadExpandsTildePaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.HasPrefix(got.Output.DictPath, "~") {
-		t.Fatalf("expected tilde expansion, got %q", got.Output.DictPath)
+	if strings.HasPrefix(got.Output.Dir, "~") {
+		t.Fatalf("expected tilde expansion, got %q", got.Output.Dir)
 	}
 }
 
@@ -187,5 +187,30 @@ func TestDefaultFullBootstrapPopularityThresholdsAndStores(t *testing.T) {
 	}
 	if !strings.HasSuffix(got.Store.MoviePath, filepath.Join("rime-pinyin-tmdb-generator", "movies-full.sqlite")) {
 		t.Fatalf("expected default movie store path to use full mode, got %q", got.Store.MoviePath)
+	}
+}
+
+func TestDefaultOutputDirUsesFcitx5RimeUserDirWhenPresent(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dataDir)
+	rimeDir := filepath.Join(dataDir, "fcitx5", "rime")
+	if err := os.MkdirAll(rimeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got := Default()
+	if got.Output.Dir != rimeDir {
+		t.Fatalf("expected default output dir %q, got %q", rimeDir, got.Output.Dir)
+	}
+}
+
+func TestDefaultOutputDirFallsBackToRimeData(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dataDir)
+
+	got := Default()
+	want := filepath.Join(dataDir, "rime-data")
+	if got.Output.Dir != want {
+		t.Fatalf("expected default output dir %q, got %q", want, got.Output.Dir)
 	}
 }

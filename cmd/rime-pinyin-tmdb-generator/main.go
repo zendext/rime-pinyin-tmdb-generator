@@ -115,7 +115,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	configPath := fs.String("config", config.DefaultPath(), "config.toml path")
-	outputPath := fs.String("output", "", "Rime dictionary output path")
+	outputDir := fs.String("output-dir", "", "Rime dictionary output directory")
 	overridesPath := fs.String("overrides", "", "overrides.yaml path")
 	apiKey := fs.String("api-key", "", "TMDb API key; TMDB_API_KEY also works")
 	baseURL := fs.String("base-url", "", "TMDb API base URL")
@@ -135,8 +135,8 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "load config: %v\n", err)
 		return 1
 	}
-	if *outputPath != "" {
-		cfg.Output.DictPath = *outputPath
+	if *outputDir != "" {
+		cfg.Output.Dir = *outputDir
 	}
 	if *overridesPath != "" {
 		cfg.Overrides = *overridesPath
@@ -210,7 +210,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	result, err := app.Generate(ctx, app.Options{
 		StorePath:      cfg.Store.Path,
 		MovieStorePath: cfg.Store.MoviePath,
-		DictPath:       cfg.Output.DictPath,
+		OutputDir:      cfg.Output.Dir,
 		Mode:           cfg.Bootstrap.Mode,
 		Languages:      cfg.TMDB.Languages,
 		Fetcher:        client,

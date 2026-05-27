@@ -36,7 +36,6 @@ func (f *fakeMovieFetcher) FetchMovies(ctx context.Context, since time.Time) ([]
 func TestGenerateWritesDictionaryAndAdvancesStateAfterSuccess(t *testing.T) {
 	dir := t.TempDir()
 	storePath := filepath.Join(dir, "series.sqlite")
-	outputPath := filepath.Join(dir, "tmdb.dict.yaml")
 	staleHantPath := filepath.Join(dir, "tmdb_popular_hant.dict.yaml")
 	if err := os.WriteFile(staleHantPath, []byte("stale"), 0o644); err != nil {
 		t.Fatal(err)
@@ -48,7 +47,7 @@ func TestGenerateWritesDictionaryAndAdvancesStateAfterSuccess(t *testing.T) {
 
 	result, err := Generate(context.Background(), Options{
 		StorePath: storePath,
-		DictPath:  outputPath,
+		OutputDir: dir,
 		Languages: []string{"zh-CN"},
 		Fetcher:   fetcher,
 		Encoder: fakeEncoder{
@@ -92,7 +91,6 @@ func TestGenerateWritesDictionaryAndAdvancesStateAfterSuccess(t *testing.T) {
 func TestGenerateWritesSeparateHansAndHantDictionaries(t *testing.T) {
 	dir := t.TempDir()
 	storePath := filepath.Join(dir, "series.sqlite")
-	outputPath := filepath.Join(dir, "tmdb.dict.yaml")
 	fetcher := &fakeFetcher{records: []tmdb.SeriesRecord{{
 		ID:   1,
 		Name: "Imaginary Show",
@@ -108,7 +106,7 @@ func TestGenerateWritesSeparateHansAndHantDictionaries(t *testing.T) {
 
 	result, err := Generate(context.Background(), Options{
 		StorePath: storePath,
-		DictPath:  outputPath,
+		OutputDir: dir,
 		Languages: []string{"zh-CN", "zh-TW"},
 		Fetcher:   fetcher,
 		Encoder: fakeEncoder{
@@ -141,7 +139,6 @@ func TestGenerateWritesSeparateHansAndHantDictionaries(t *testing.T) {
 func TestGenerateUsesModeSpecificDictionaryNames(t *testing.T) {
 	dir := t.TempDir()
 	storePath := filepath.Join(dir, "series.sqlite")
-	outputPath := filepath.Join(dir, "tmdb.dict.yaml")
 	fetcher := &fakeFetcher{records: []tmdb.SeriesRecord{{
 		ID:   1,
 		Name: "虚构剧集",
@@ -149,7 +146,7 @@ func TestGenerateUsesModeSpecificDictionaryNames(t *testing.T) {
 
 	result, err := Generate(context.Background(), Options{
 		StorePath: storePath,
-		DictPath:  outputPath,
+		OutputDir: dir,
 		Mode:      "full",
 		Fetcher:   fetcher,
 		Encoder: fakeEncoder{
@@ -175,7 +172,6 @@ func TestGenerateWritesMovieDictionariesSeparatelyInFullMode(t *testing.T) {
 	dir := t.TempDir()
 	storePath := filepath.Join(dir, "series.sqlite")
 	movieStorePath := filepath.Join(dir, "movies.sqlite")
-	outputPath := filepath.Join(dir, "tmdb.dict.yaml")
 	staleMovieHantPath := filepath.Join(dir, "tmdb_movie_hant.dict.yaml")
 	if err := os.WriteFile(staleMovieHantPath, []byte("stale"), 0o644); err != nil {
 		t.Fatal(err)
@@ -201,7 +197,7 @@ func TestGenerateWritesMovieDictionariesSeparatelyInFullMode(t *testing.T) {
 	result, err := Generate(context.Background(), Options{
 		StorePath:      storePath,
 		MovieStorePath: movieStorePath,
-		DictPath:       outputPath,
+		OutputDir:      dir,
 		Mode:           "full",
 		Languages:      []string{"zh-CN"},
 		Fetcher:        fetcher,
@@ -240,7 +236,6 @@ func TestGenerateWritesMovieDictionariesSeparatelyInFullMode(t *testing.T) {
 func TestGenerateUsesLastSuccessfulFetchAtFromSQLiteStore(t *testing.T) {
 	dir := t.TempDir()
 	storePath := filepath.Join(dir, "series.sqlite")
-	outputPath := filepath.Join(dir, "tmdb.dict.yaml")
 	since := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
 
 	db, err := store.Open(storePath)
@@ -255,7 +250,7 @@ func TestGenerateUsesLastSuccessfulFetchAtFromSQLiteStore(t *testing.T) {
 	fetcher := &fakeFetcher{}
 	_, err = Generate(context.Background(), Options{
 		StorePath: storePath,
-		DictPath:  outputPath,
+		OutputDir: dir,
 		Fetcher:   fetcher,
 		Encoder:   fakeEncoder{},
 		Now:       func() time.Time { return time.Date(2026, 5, 26, 12, 0, 0, 0, time.UTC) },

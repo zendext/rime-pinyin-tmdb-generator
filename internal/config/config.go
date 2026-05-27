@@ -27,7 +27,7 @@ type TMDBConfig struct {
 }
 
 type OutputConfig struct {
-	DictPath string `toml:"dict_path"`
+	Dir      string `toml:"dir"`
 	LockPath string `toml:"lock_path"`
 }
 
@@ -71,7 +71,7 @@ func Default() Config {
 			Languages: []string{"zh-CN", "zh-TW", "zh-HK"},
 		},
 		Output: OutputConfig{
-			DictPath: filepath.Join(dataDir, "rime-data", "tmdb.dict.yaml"),
+			Dir:      defaultOutputDir(dataDir),
 			LockPath: filepath.Join(baseState, "update.lock"),
 		},
 		Store: StoreConfig{
@@ -179,7 +179,7 @@ func applyEnv(cfg *Config) {
 }
 
 func expandPaths(cfg *Config) {
-	cfg.Output.DictPath = expandHome(cfg.Output.DictPath)
+	cfg.Output.Dir = expandHome(cfg.Output.Dir)
 	cfg.Output.LockPath = expandHome(cfg.Output.LockPath)
 	cfg.Store.Path = expandHome(cfg.Store.Path)
 	cfg.Store.MoviePath = expandHome(cfg.Store.MoviePath)
@@ -194,6 +194,14 @@ func defaultStorePath(mode string) string {
 		return filepath.Join(baseState, "series-full.sqlite")
 	}
 	return filepath.Join(baseState, "series-popular.sqlite")
+}
+
+func defaultOutputDir(dataDir string) string {
+	fcitx5RimeDir := filepath.Join(dataDir, "fcitx5", "rime")
+	if info, err := os.Stat(fcitx5RimeDir); err == nil && info.IsDir() {
+		return fcitx5RimeDir
+	}
+	return filepath.Join(dataDir, "rime-data")
 }
 
 func defaultMovieStorePath() string {

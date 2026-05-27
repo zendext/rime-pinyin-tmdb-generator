@@ -40,7 +40,7 @@ base_url = "https://api.themoviedb.org/3"
 languages = ["zh-CN"]
 
 [output]
-dict_path = "~/.local/share/rime-data/tmdb.dict.yaml"
+dir = "~/.local/share/fcitx5/rime"
 lock_path = "~/.local/state/rime-pinyin-tmdb-generator/update.lock"
 
 [bootstrap]
@@ -113,16 +113,16 @@ timer_ready=true
 
 ```sh
 rime-pinyin-tmdb-generator generate \
-  --output ~/.local/share/rime-data/tmdb.dict.yaml
+  --output-dir ~/.local/share/fcitx5/rime
 ```
 
-生成器会按 `dict_path` 所在目录和 `languages` 写出词典：
+生成器会按 `dir` 和 `languages` 写出词典：
 
 - `zh-CN`：popular 模式为 `tmdb_popular_hans.dict.yaml`，full 模式为 `tmdb_full_hans.dict.yaml`
 - `zh-TW` / `zh-HK`：popular 模式为 `tmdb_popular_hant.dict.yaml`，full 模式为 `tmdb_full_hant.dict.yaml`
 - full 模式电影会额外生成 `tmdb_movie_hans.dict.yaml`，配置 `zh-TW` / `zh-HK` 时额外生成 `tmdb_movie_hant.dict.yaml`
 
-`dict_path` 只用于决定输出目录；文件名会按当前 `bootstrap.mode` 和 `languages` 自动派生。`hans` 为简体，来自 `zh-CN`；`hant` 为繁体，来自 `zh-TW` / `zh-HK`。没有配置繁体语言时，不会生成 `_hant` 词典。
+文件名会按当前 `bootstrap.mode` 和 `languages` 自动派生。`hans` 为简体，来自 `zh-CN`；`hant` 为繁体，来自 `zh-TW` / `zh-HK`。没有配置繁体语言时，不会生成 `_hant` 词典。
 
 popular 模式的简体用户在主 Rime 词典中引入：
 
@@ -151,7 +151,7 @@ macOS 示例：
 ```sh
 rime-pinyin-tmdb-generator generate \
   --config "$HOME/Library/Application Support/rime-pinyin-tmdb-generator/config.toml" \
-  --output "$HOME/Library/Rime/tmdb.dict.yaml" \
+  --output-dir "$HOME/Library/Rime" \
   --store "$HOME/Library/Application Support/rime-pinyin-tmdb-generator/series.sqlite"
 ```
 
@@ -160,7 +160,7 @@ Windows PowerShell 示例：
 ```powershell
 rime-pinyin-tmdb-generator.exe generate `
   --config "$env:APPDATA\rime-pinyin-tmdb-generator\config.toml" `
-  --output "$env:APPDATA\Rime\tmdb.dict.yaml" `
+  --output-dir "$env:APPDATA\Rime" `
   --store "$env:LOCALAPPDATA\rime-pinyin-tmdb-generator\series.sqlite"
 ```
 

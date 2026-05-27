@@ -5,7 +5,7 @@ base_url = "https://api.themoviedb.org/3"
 languages = ["zh-CN"]
 
 [output]
-dict_path = "~/.local/share/rime-data/tmdb.dict.yaml"
+dir = "~/.local/share/fcitx5/rime"
 lock_path = "~/.local/state/rime-pinyin-tmdb-generator/update.lock"
 
 [bootstrap]

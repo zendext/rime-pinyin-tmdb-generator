@@ -23,7 +23,7 @@ type MovieFetcher interface {
 type Options struct {
 	StorePath      string
 	MovieStorePath string
-	DictPath       string
+	OutputDir      string
 	Mode           string
 	Languages      []string
 	Fetcher        Fetcher
@@ -35,7 +35,7 @@ type Options struct {
 
 type Result struct {
 	EntryCount int
-	DictPath   string
+	OutputDir  string
 	DictPaths  []string
 	StorePath  string
 }
@@ -47,7 +47,7 @@ func Generate(ctx context.Context, opts Options) (Result, error) {
 	}
 	tvResult, err := generateSeriesDictionaries(ctx, seriesGenerateOptions{
 		StorePath:   opts.StorePath,
-		DictPath:    opts.DictPath,
+		OutputDir:   opts.OutputDir,
 		GroupPrefix: dictionaryPrefix(opts.Mode),
 		Languages:   opts.Languages,
 		Fetch:       opts.Fetcher.FetchSeries,
@@ -60,14 +60,14 @@ func Generate(ctx context.Context, opts Options) (Result, error) {
 	}
 	result := Result{
 		EntryCount: tvResult.EntryCount,
-		DictPath:   opts.DictPath,
+		OutputDir:  opts.OutputDir,
 		DictPaths:  append([]string(nil), tvResult.DictPaths...),
 		StorePath:  opts.StorePath,
 	}
 	if strings.TrimSpace(opts.Mode) == "full" && opts.MovieFetcher != nil && strings.TrimSpace(opts.MovieStorePath) != "" {
 		movieResult, err := generateSeriesDictionaries(ctx, seriesGenerateOptions{
 			StorePath:   opts.MovieStorePath,
-			DictPath:    opts.DictPath,
+			OutputDir:   opts.OutputDir,
 			GroupPrefix: "tmdb_movie",
 			Languages:   opts.Languages,
 			Fetch:       opts.MovieFetcher.FetchMovies,
@@ -88,7 +88,7 @@ type seriesFetchFunc func(context.Context, time.Time) ([]tmdb.SeriesRecord, erro
 
 type seriesGenerateOptions struct {
 	StorePath   string
-	DictPath    string
+	OutputDir   string
 	GroupPrefix string
 	Languages   []string
 	Fetch       seriesFetchFunc
@@ -140,7 +140,7 @@ func generateSeriesDictionaries(ctx context.Context, opts seriesGenerateOptions)
 		if err != nil {
 			return Result{}, err
 		}
-		dictPath := dictionaryPath(opts.DictPath, group.Name)
+		dictPath := dictionaryPath(opts.OutputDir, group.Name)
 		if err := atomicWrite(dictPath, []byte(dict), 0o644); err != nil {
 			return Result{}, err
 		}
@@ -149,7 +149,7 @@ func generateSeriesDictionaries(ctx context.Context, opts seriesGenerateOptions)
 		totalEntries += len(words)
 	}
 	for _, group := range allDictionaryGroups(opts.GroupPrefix) {
-		dictPath := dictionaryPath(opts.DictPath, group.Name)
+		dictPath := dictionaryPath(opts.OutputDir, group.Name)
 		if written[dictPath] {
 			continue
 		}
@@ -164,7 +164,7 @@ func generateSeriesDictionaries(ctx context.Context, opts seriesGenerateOptions)
 	if err := db.SaveRunState(st); err != nil {
 		return Result{}, err
 	}
-	return Result{EntryCount: totalEntries, DictPath: opts.DictPath, DictPaths: dictPaths, StorePath: opts.StorePath}, nil
+	return Result{EntryCount: totalEntries, OutputDir: opts.OutputDir, DictPaths: dictPaths, StorePath: opts.StorePath}, nil
 }
 
 func atomicWrite(path string, data []byte, perm os.FileMode) error {
@@ -214,12 +214,6 @@ func dictionaryPrefix(mode string) string {
 	return "tmdb_" + mode
 }
 
-func dictionaryPath(basePath, name string) string {
-	dir := filepath.Dir(basePath)
-	filename := filepath.Base(basePath)
-	suffix := filepath.Ext(filename)
-	if strings.HasSuffix(filename, ".dict.yaml") {
-		suffix = ".dict.yaml"
-	}
-	return filepath.Join(dir, name+suffix)
+func dictionaryPath(outputDir, name string) string {
+	return filepath.Join(outputDir, name+".dict.yaml")
 }
