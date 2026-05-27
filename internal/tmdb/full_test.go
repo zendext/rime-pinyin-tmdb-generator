@@ -476,7 +476,7 @@ func TestClientMovieFullBootstrapUsesMovieExportTranslationsAndFilters(t *testin
 				t.Fatal(err)
 			}
 		case "/3/movie/201/translations":
-			writeJSON(t, w, translationPayload(201, "虚构电影"))
+			writeJSON(t, w, movieTranslationPayload(201, "虚构电影"))
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -526,5 +526,19 @@ func TestClientMovieFullBootstrapUsesMovieExportTranslationsAndFilters(t *testin
 	wantPaths = append(wantPaths, "/p/exports/movie_ids_05_26_2026.json.gz")
 	if !reflect.DeepEqual(paths, wantPaths) {
 		t.Fatalf("second run should diff completed movie store against daily export, paths=%#v", paths)
+	}
+}
+
+func movieTranslationPayload(id int, title string) map[string]any {
+	return map[string]any{
+		"id": id,
+		"translations": []map[string]any{{
+			"iso_639_1":  "zh",
+			"iso_3166_1": "CN",
+			"name":       "普通话",
+			"data": map[string]any{
+				"title": title,
+			},
+		}},
 	}
 }

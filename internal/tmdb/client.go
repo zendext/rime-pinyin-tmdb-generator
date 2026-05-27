@@ -39,6 +39,8 @@ type Client struct {
 	Logf               func(format string, args ...any)
 }
 
+const skipCursorPersistInterval = 1000
+
 type PopularSource struct {
 	Path  string
 	Pages int
@@ -200,16 +202,24 @@ func (c *Client) consumeExport(ctx context.Context, db *store.DB, exportDate str
 		lastCursor = nextCursor
 		if c.shouldSkipExportItem(item, spec) {
 			skippedItems++
-			if err := db.SetBootstrap(exportDate, nextCursor, false); err != nil {
-				return err
+			if skippedItems == 1 || skippedItems%skipCursorPersistInterval == 0 {
+				if err := db.SetBootstrap(exportDate, nextCursor, false); err != nil {
+					return err
+				}
+				persistedCursor = nextCursor
 			}
-			persistedCursor = nextCursor
 			if skippedItems%100 == 0 || skippedItems == 1 {
 				c.logf("full bootstrap skipped export=%s cursor=%d skipped=%d", exportDate, nextCursor, skippedItems)
 			}
 			continue
 		}
 		if c.MaxItems > 0 && processedItems >= c.MaxItems {
+			if persistedCursor != offset {
+				if err := db.SetBootstrap(exportDate, offset, false); err != nil {
+					return err
+				}
+				persistedCursor = offset
+			}
 			c.logf("full bootstrap paused export=%s cursor=%d processed=%d skipped=%d reason=max_items", exportDate, persistedCursor, processedItems, skippedItems)
 			return nil
 		}
@@ -643,7 +653,8 @@ type translationsResponse struct {
 		ISO6391  string `json:"iso_639_1"`
 		Name     string `json:"name"`
 		Data     struct {
-			Name string `json:"name"`
+			Name  string `json:"name"`
+			Title string `json:"title"`
 		} `json:"data"`
 	} `json:"translations"`
 }
@@ -684,7 +695,7 @@ func attachTranslationResponse(record *SeriesRecord, resp translationsResponse, 
 		}
 		name := strings.TrimSpace(item.Data.Name)
 		if name == "" {
-			name = strings.TrimSpace(item.Name)
+			name = strings.TrimSpace(item.Data.Title)
 		}
 		if name != "" {
 			record.Translations[language] = Translation{Name: name}
