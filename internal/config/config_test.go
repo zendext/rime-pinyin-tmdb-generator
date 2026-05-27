@@ -61,40 +61,22 @@ func TestLoadUsesTMDBConfigAndEnvironment(t *testing.T) {
 	}
 }
 
-func TestLoadUsesPopularBootstrapPageConfig(t *testing.T) {
+func TestLoadRejectsPopularBootstrapMode(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	data := []byte("[bootstrap]\nmode = \"popular\"\n[bootstrap.popular]\ntrending_week_pages = 2\npopular_pages = 4\ntop_rated_pages = 6\n")
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Bootstrap.Popular.TrendingWeekPages != 2 ||
-		got.Bootstrap.Popular.PopularPages != 4 ||
-		got.Bootstrap.Popular.TopRatedPages != 6 {
-		t.Fatalf("unexpected popular page config: %#v", got.Bootstrap.Popular)
+	_, err := Load(path)
+	if err == nil || err.Error() != `unsupported bootstrap mode "popular"` {
+		t.Fatalf("expected popular mode rejection, got %v", err)
 	}
 }
 
-func TestLoadUsesModeSpecificDefaultStorePaths(t *testing.T) {
+func TestLoadUsesFullDefaultStorePath(t *testing.T) {
 	stateDir := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", stateDir)
-
-	popularConfigPath := filepath.Join(t.TempDir(), "popular.toml")
-	if err := os.WriteFile(popularConfigPath, []byte("[bootstrap]\nmode = \"popular\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	popular, err := Load(popularConfigPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	popularWant := filepath.Join(stateDir, "rime-pinyin-tmdb-generator", "series-popular.sqlite")
-	if popular.Store.Path != popularWant {
-		t.Fatalf("expected popular default store %q, got %q", popularWant, popular.Store.Path)
-	}
 
 	fullConfigPath := filepath.Join(t.TempDir(), "full.toml")
 	if err := os.WriteFile(fullConfigPath, []byte("[bootstrap]\nmode = \"full\"\n"), 0o644); err != nil {
@@ -124,7 +106,7 @@ func TestApplyModeDefaultsUsesFinalModeUnlessStorePathIsExplicit(t *testing.T) {
 
 	cfg.Store.Path = filepath.Join(stateDir, "custom.sqlite")
 	cfg.Store.PathExplicit = true
-	cfg.Bootstrap.Mode = "popular"
+	cfg.Bootstrap.Mode = "legacy"
 	ApplyModeDefaults(&cfg)
 	if cfg.Store.Path != filepath.Join(stateDir, "custom.sqlite") {
 		t.Fatalf("expected explicit store path to be preserved, got %q", cfg.Store.Path)

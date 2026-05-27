@@ -101,7 +101,7 @@ func TestRunStatusReportsEarliestIncompleteBootstrap(t *testing.T) {
 	}
 }
 
-func TestRunStatusReportsUnknownBootstrapModeNotTimerReady(t *testing.T) {
+func TestRunStatusRejectsUnknownBootstrapMode(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
 	storePath := filepath.Join(dir, "series.sqlite")
@@ -112,11 +112,30 @@ func TestRunStatusReportsUnknownBootstrapModeNotTimerReady(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"status", "--config", configPath}, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("expected exit 0, got %d: %s", code, stderr.String())
+	if code != 1 {
+		t.Fatalf("expected exit 1, got %d: %s", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "timer_ready=false") {
-		t.Fatalf("expected timer_ready=false in status output:\n%s", stdout.String())
+	if !strings.Contains(stderr.String(), `unsupported bootstrap mode "legacy"`) {
+		t.Fatalf("expected unsupported mode error, got stdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunGenerateRejectsPopularBootstrapModeOverride(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	lockPath := filepath.Join(dir, "update.lock")
+	configData := []byte("[tmdb]\napi_key = \"test\"\n[output]\nlock_path = \"" + lockPath + "\"\n")
+	if err := os.WriteFile(configPath, configData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"generate", "--config", configPath, "--bootstrap-mode", "popular"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("expected exit 1, got %d: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), `unsupported bootstrap mode "popular"`) {
+		t.Fatalf("expected popular mode rejection, got stdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
 	}
 }
 
@@ -161,7 +180,7 @@ func TestSystemdTimerRunsDaily(t *testing.T) {
 	}
 }
 
-func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
+func TestDocsShowSingleDefaultLanguageAndFullStatus(t *testing.T) {
 	configData, err := os.ReadFile("../../examples/config.toml")
 	if err != nil {
 		t.Fatal(err)
@@ -180,9 +199,6 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 		t.Fatalf("example config should not include old dict_path:\n%s", configText)
 	}
 	for _, want := range []string{
-		"trending_week_pages = 5",
-		"popular_pages = 10",
-		"top_rated_pages = 10",
 		"min_popularity = 10",
 		"movie_min_popularity = 15",
 		"request_interval = \"50ms\"",
@@ -219,7 +235,7 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 		t.Fatal("README default config should not include max_pages")
 	}
 	if strings.Contains(readme, "--max-pages") {
-		t.Fatal("README should not document max-pages for popular defaults")
+		t.Fatal("README should not document max-pages")
 	}
 	if !strings.Contains(readme, `dir = "~/.local/share/fcitx5/rime"`) || !strings.Contains(readme, "--output-dir") {
 		t.Fatal("README should document output directory configuration")
@@ -227,17 +243,19 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 	if strings.Contains(readme, "dict_path") || strings.Contains(readme, "--output ") {
 		t.Fatal("README should not document old output file path configuration")
 	}
-	for _, want := range []string{
-		"/trending/tv/week`：默认最多 5 页",
-		"/tv/popular`：默认最多 10 页",
-		"/tv/top_rated`：默认最多 10 页",
+	for _, stale := range []string{
+		"[bootstrap.popular]",
+		"popular_pages",
+		"trending_week_pages",
+		"top_rated_pages",
+		"popular 模式",
+		"series-popular.sqlite",
+		"tmdb_popular_hans",
+		"tmdb_popular_hant",
 	} {
-		if !strings.Contains(readme, want) {
-			t.Fatalf("README should document popular source default %q", want)
+		if strings.Contains(readme, stale) {
+			t.Fatalf("README should not document popular mode reference %q", stale)
 		}
-	}
-	if !strings.Contains(readme, "popular 和 full 模式都可以用 `status`") {
-		t.Fatal("README should explain status works for popular and full modes")
 	}
 	if !strings.Contains(readme, "min_popularity = 10") || !strings.Contains(readme, "popularity >= min_popularity") {
 		t.Fatal("README should document full min_popularity filtering")
@@ -266,30 +284,25 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 		t.Fatal("README default config should rely on the default store path")
 	}
 	for _, want := range []string{
-		"SQLite store 默认按模式分开",
-		"series-popular.sqlite",
+		"SQLite store 默认路径",
 		"series-full.sqlite",
 		"movies-full.sqlite",
-		"同时保留两种模式的进度和生成状态",
 	} {
 		if !strings.Contains(readme, want) {
-			t.Fatalf("README should document mode-specific default store path %q", want)
+			t.Fatalf("README should document default store path %q", want)
 		}
 	}
 	for _, want := range []string{
-		"tmdb_popular_hans.dict.yaml",
-		"tmdb_popular_hant.dict.yaml",
 		"tmdb_full_hans.dict.yaml",
 		"tmdb_full_hant.dict.yaml",
 		"tmdb_movie_hans.dict.yaml",
 		"tmdb_movie_hant.dict.yaml",
-		"tmdb_popular_hans",
 		"tmdb_full_hans",
 		"tmdb_movie_hans",
 		"没有配置繁体语言时，不会生成 `_hant` 词典",
 	} {
 		if !strings.Contains(readme, want) {
-			t.Fatalf("README should document mode-specific dictionary name %q", want)
+			t.Fatalf("README should document dictionary name %q", want)
 		}
 	}
 	for _, stale := range []string{

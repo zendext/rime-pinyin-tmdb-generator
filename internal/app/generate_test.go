@@ -36,7 +36,7 @@ func (f *fakeMovieFetcher) FetchMovies(ctx context.Context, since time.Time) ([]
 func TestGenerateWritesDictionaryAndAdvancesStateAfterSuccess(t *testing.T) {
 	dir := t.TempDir()
 	storePath := filepath.Join(dir, "series.sqlite")
-	staleHantPath := filepath.Join(dir, "tmdb_popular_hant.dict.yaml")
+	staleHantPath := filepath.Join(dir, "tmdb_full_hant.dict.yaml")
 	if err := os.WriteFile(staleHantPath, []byte("stale"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -48,6 +48,7 @@ func TestGenerateWritesDictionaryAndAdvancesStateAfterSuccess(t *testing.T) {
 	result, err := Generate(context.Background(), Options{
 		StorePath: storePath,
 		OutputDir: dir,
+		Mode:      "full",
 		Languages: []string{"zh-CN"},
 		Fetcher:   fetcher,
 		Encoder: fakeEncoder{
@@ -61,11 +62,11 @@ func TestGenerateWritesDictionaryAndAdvancesStateAfterSuccess(t *testing.T) {
 	if result.EntryCount != 1 {
 		t.Fatalf("expected 1 entry, got %d", result.EntryCount)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "tmdb_popular_hans.dict.yaml"))
+	data, err := os.ReadFile(filepath.Join(dir, "tmdb_full_hans.dict.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "name: tmdb_popular_hans") {
+	if !strings.Contains(string(data), "name: tmdb_full_hans") {
 		t.Fatalf("generated dictionary has wrong name:\n%s", data)
 	}
 	if !strings.Contains(string(data), "虚构剧集\txu gou ju ji\t90") {
@@ -107,6 +108,7 @@ func TestGenerateWritesSeparateHansAndHantDictionaries(t *testing.T) {
 	result, err := Generate(context.Background(), Options{
 		StorePath: storePath,
 		OutputDir: dir,
+		Mode:      "full",
 		Languages: []string{"zh-CN", "zh-TW"},
 		Fetcher:   fetcher,
 		Encoder: fakeEncoder{
@@ -122,15 +124,15 @@ func TestGenerateWritesSeparateHansAndHantDictionaries(t *testing.T) {
 		t.Fatalf("expected 2 entries, got %d", result.EntryCount)
 	}
 
-	hansData := mustReadFile(t, filepath.Join(dir, "tmdb_popular_hans.dict.yaml"))
-	mustContainText(t, hansData, "name: tmdb_popular_hans")
+	hansData := mustReadFile(t, filepath.Join(dir, "tmdb_full_hans.dict.yaml"))
+	mustContainText(t, hansData, "name: tmdb_full_hans")
 	mustContainText(t, hansData, "虚构剧集\txu gou ju ji\t100")
 	mustNotContainText(t, hansData, "新加坡译名")
 	mustNotContainText(t, hansData, "虛構劇集")
 	mustNotContainText(t, hansData, "Unlabeled Alias")
 
-	hantData := mustReadFile(t, filepath.Join(dir, "tmdb_popular_hant.dict.yaml"))
-	mustContainText(t, hantData, "name: tmdb_popular_hant")
+	hantData := mustReadFile(t, filepath.Join(dir, "tmdb_full_hant.dict.yaml"))
+	mustContainText(t, hantData, "name: tmdb_full_hant")
 	mustContainText(t, hantData, "虛構劇集\txu gou ju ji\t100")
 	mustNotContainText(t, hantData, "虚构剧集")
 	mustNotContainText(t, hantData, "Unlabeled Alias")

@@ -101,7 +101,6 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "bootstrap_completed=%t\n", bootstrap.Completed)
 		fmt.Fprintf(stdout, "bootstrap_updated_at=%s\n", formatTime(bootstrap.UpdatedAt))
 	} else {
-		timerReady = cfg.Bootstrap.Mode == "" || cfg.Bootstrap.Mode == "popular"
 		fmt.Fprintln(stdout, "bootstrap_export_date=")
 		fmt.Fprintln(stdout, "bootstrap_cursor=0")
 		fmt.Fprintln(stdout, "bootstrap_completed=false")
@@ -120,7 +119,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	apiKey := fs.String("api-key", "", "TMDb API key; TMDB_API_KEY also works")
 	baseURL := fs.String("base-url", "", "TMDb API base URL")
 	languages := fs.String("languages", "", "comma-separated TMDb language codes")
-	bootstrapMode := fs.String("bootstrap-mode", "", "bootstrap mode: popular or full")
+	bootstrapMode := fs.String("bootstrap-mode", "", "bootstrap mode: full")
 	storePath := fs.String("store", "", "SQLite store path")
 	exportDate := fs.String("export-date", "", "TMDb daily export date in MM_DD_YYYY")
 	requestInterval := fs.Duration("request-interval", 0, "minimum interval between full bootstrap API requests")
@@ -170,6 +169,10 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 		cfg.Rime.RedeployCommand = *redeploy
 	}
 	config.ApplyModeDefaults(&cfg)
+	if err := config.Validate(&cfg); err != nil {
+		fmt.Fprintf(stderr, "load config: %v\n", err)
+		return 1
+	}
 
 	l, err := lock.Acquire(cfg.Output.LockPath)
 	if err != nil {
@@ -188,7 +191,6 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 		APIKey:             cfg.TMDB.APIKey,
 		Languages:          cfg.TMDB.Languages,
 		BootstrapMode:      cfg.Bootstrap.Mode,
-		PopularSources:     popularSources(cfg.Bootstrap.Popular),
 		ExportBaseURL:      cfg.Bootstrap.ExportBaseURL,
 		ExportDate:         cfg.Bootstrap.ExportDate,
 		StorePath:          cfg.Store.Path,
@@ -203,9 +205,6 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	}
 	ctx := context.Background()
 	cancel := func() {}
-	if cfg.Bootstrap.Mode != "full" {
-		ctx, cancel = context.WithTimeout(context.Background(), 10*time.Minute)
-	}
 	defer cancel()
 	result, err := app.Generate(ctx, app.Options{
 		StorePath:      cfg.Store.Path,
@@ -232,17 +231,9 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func popularSources(cfg config.PopularConfig) []tmdb.PopularSource {
-	return []tmdb.PopularSource{
-		{Path: "/trending/tv/week", Pages: cfg.TrendingWeekPages},
-		{Path: "/tv/popular", Pages: cfg.PopularPages},
-		{Path: "/tv/top_rated", Pages: cfg.TopRatedPages},
-	}
-}
-
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "usage: rime-pinyin-tmdb-generator <generate|status|version>")
-	fmt.Fprintln(w, "  generate  fetch TMDb metadata locally and write mode-specific dictionaries")
+	fmt.Fprintln(w, "  generate  fetch TMDb metadata locally and write dictionaries")
 	fmt.Fprintln(w, "  status    print local bootstrap and dictionary status")
 	fmt.Fprintln(w, "  version   print version")
 }

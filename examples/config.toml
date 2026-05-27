@@ -14,10 +14,5 @@ request_interval = "50ms"
 min_popularity = 10
 movie_min_popularity = 15
 
-[bootstrap.popular]
-trending_week_pages = 5
-popular_pages = 10
-top_rated_pages = 10
-
 [rime]
 redeploy_command = ""

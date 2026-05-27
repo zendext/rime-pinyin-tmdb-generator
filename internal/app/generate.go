@@ -45,10 +45,14 @@ func Generate(ctx context.Context, opts Options) (Result, error) {
 	if opts.Now != nil {
 		now = opts.Now
 	}
+	mode := strings.TrimSpace(opts.Mode)
+	if mode == "" {
+		mode = "full"
+	}
 	tvResult, err := generateSeriesDictionaries(ctx, seriesGenerateOptions{
 		StorePath:   opts.StorePath,
 		OutputDir:   opts.OutputDir,
-		GroupPrefix: dictionaryPrefix(opts.Mode),
+		GroupPrefix: dictionaryPrefix(mode),
 		Languages:   opts.Languages,
 		Fetch:       opts.Fetcher.FetchSeries,
 		Encoder:     opts.Encoder,
@@ -64,7 +68,7 @@ func Generate(ctx context.Context, opts Options) (Result, error) {
 		DictPaths:  append([]string(nil), tvResult.DictPaths...),
 		StorePath:  opts.StorePath,
 	}
-	if strings.TrimSpace(opts.Mode) == "full" && opts.MovieFetcher != nil && strings.TrimSpace(opts.MovieStorePath) != "" {
+	if mode == "full" && opts.MovieFetcher != nil && strings.TrimSpace(opts.MovieStorePath) != "" {
 		movieResult, err := generateSeriesDictionaries(ctx, seriesGenerateOptions{
 			StorePath:   opts.MovieStorePath,
 			OutputDir:   opts.OutputDir,
@@ -209,7 +213,7 @@ func allDictionaryGroups(prefix string) []tmdb.TitleGroup {
 func dictionaryPrefix(mode string) string {
 	mode = strings.TrimSpace(mode)
 	if mode == "" {
-		mode = "popular"
+		mode = "full"
 	}
 	return "tmdb_" + mode
 }

@@ -27,7 +27,6 @@ type Client struct {
 	HTTP      *http.Client
 
 	BootstrapMode      string
-	PopularSources     []PopularSource
 	ExportBaseURL      string
 	ExportDate         string
 	StorePath          string
@@ -44,21 +43,13 @@ const (
 	skipLogInterval           = 10000
 )
 
-type PopularSource struct {
-	Path  string
-	Pages int
-}
-
 func (c *Client) FetchSeries(ctx context.Context, since time.Time) ([]SeriesRecord, error) {
 	if strings.TrimSpace(c.APIKey) == "" {
 		return nil, fmt.Errorf("TMDb API key is required")
 	}
 	mode := strings.TrimSpace(c.BootstrapMode)
-	if mode == "full" {
+	if mode == "" || mode == "full" {
 		return c.fetchFullBootstrap(ctx, since, c.tvMediaSpec())
-	}
-	if mode == "" || mode == "popular" {
-		return c.fetchPopularBootstrap(ctx, since)
 	}
 	return nil, fmt.Errorf("unsupported bootstrap mode %q", mode)
 }
@@ -67,60 +58,11 @@ func (c *Client) FetchMovies(ctx context.Context, since time.Time) ([]SeriesReco
 	if strings.TrimSpace(c.APIKey) == "" {
 		return nil, fmt.Errorf("TMDb API key is required")
 	}
-	if strings.TrimSpace(c.BootstrapMode) != "full" {
+	mode := strings.TrimSpace(c.BootstrapMode)
+	if mode != "" && mode != "full" {
 		return nil, fmt.Errorf("movie bootstrap requires full mode")
 	}
 	return c.fetchFullBootstrap(ctx, since, c.movieMediaSpec())
-}
-
-func (c *Client) fetchPopularBootstrap(ctx context.Context, since time.Time) ([]SeriesRecord, error) {
-	if strings.TrimSpace(c.StorePath) == "" {
-		return nil, fmt.Errorf("TMDb popular bootstrap requires a store path")
-	}
-	db, err := store.Open(c.StorePath)
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-	items, err := c.fetchCommonListItems(ctx)
-	if err != nil {
-		return nil, err
-	}
-	seen := make(map[int]bool)
-	c.logf("tmdb.popular.items fetched_items=%d unique_ids=%d", len(items), uniqueItemCount(items))
-	processed := 0
-	total := uniqueItemCount(items)
-	for _, item := range items {
-		if item.ID <= 0 || seen[item.ID] {
-			continue
-		}
-		seen[item.ID] = true
-		record, err := c.fetchSeriesTranslationsByID(ctx, item.ID)
-		if err != nil {
-			return nil, err
-		}
-		now := time.Now().UTC()
-		if err := db.UpsertSeries(store.Series{
-			ID:         item.ID,
-			Popularity: item.Popularity,
-			Titles:     titlesFromRecord(record),
-			FetchedAt:  now,
-			LastSeenAt: now,
-		}); err != nil {
-			return nil, err
-		}
-		processed++
-		if processed%50 == 0 {
-			c.logf("tmdb.popular.translations.progress processed=%d total=%d", processed, total)
-		}
-		c.wait(ctx)
-	}
-	count, err := db.SeriesCount()
-	if err != nil {
-		return nil, err
-	}
-	c.logf("tmdb.popular.done processed=%d store_series=%d", processed, count)
-	return c.recordsFromStore(db)
 }
 
 func (c *Client) fetchFullBootstrap(ctx context.Context, since time.Time, spec mediaSpec) ([]SeriesRecord, error) {
@@ -445,10 +387,6 @@ func (c *Client) shouldSkipExportItem(item exportSeries, spec mediaSpec) bool {
 	return item.Adult || item.ID <= 0 || (spec.SkipVideo && item.Video) || (spec.MinPopularity > 0 && item.Popularity < spec.MinPopularity)
 }
 
-func (c *Client) fetchSeriesTranslationsByID(ctx context.Context, id int) (SeriesRecord, error) {
-	return c.fetchTranslationsByID(ctx, id, c.tvMediaSpec())
-}
-
 func (c *Client) fetchTranslationsByID(ctx context.Context, id int, spec mediaSpec) (SeriesRecord, error) {
 	var resp translationsResponse
 	if err := c.request(ctx, http.MethodGet, fmt.Sprintf("/%s/%d/translations", spec.APIPath, id), nil, &resp); err != nil {
@@ -503,29 +441,6 @@ func (c *Client) recordsFromStore(db *store.DB) ([]SeriesRecord, error) {
 		records = append(records, record)
 	}
 	return records, nil
-}
-
-func (c *Client) fetchCommonListItems(ctx context.Context) ([]seriesAPIRecord, error) {
-	var items []seriesAPIRecord
-	c.logf("tmdb.popular.start sources=%d", len(c.PopularSources))
-	for _, source := range c.PopularSources {
-		for page := 1; page <= source.Pages; page++ {
-			q := url.Values{
-				"language": []string{c.primaryLanguage()},
-				"page":     []string{strconv.Itoa(page)},
-			}
-			var resp discoverResponse
-			if err := c.request(ctx, http.MethodGet, source.Path, q, &resp); err != nil {
-				return nil, err
-			}
-			c.logf("tmdb.popular.list source=%s page=%d items=%d", source.Path, page, len(resp.Results))
-			items = append(items, resp.Results...)
-			if resp.TotalPages > 0 && page >= resp.TotalPages {
-				break
-			}
-		}
-	}
-	return items, nil
 }
 
 func (c *Client) request(ctx context.Context, method, path string, q url.Values, out any) error {
@@ -649,12 +564,6 @@ func (c *Client) logf(format string, args ...any) {
 	}
 }
 
-type discoverResponse struct {
-	Page       int               `json:"page"`
-	Results    []seriesAPIRecord `json:"results"`
-	TotalPages int               `json:"total_pages"`
-}
-
 type translationsResponse struct {
 	ID           int `json:"id"`
 	Translations []struct {
@@ -666,11 +575,6 @@ type translationsResponse struct {
 			Title string `json:"title"`
 		} `json:"data"`
 	} `json:"translations"`
-}
-
-type seriesAPIRecord struct {
-	ID         int     `json:"id"`
-	Popularity float64 `json:"popularity"`
 }
 
 func normalTMDBLanguage(language, country string) string {
@@ -720,16 +624,6 @@ func titlesFromRecord(record SeriesRecord) map[string]string {
 		}
 	}
 	return titles
-}
-
-func uniqueItemCount(items []seriesAPIRecord) int {
-	seen := make(map[int]bool)
-	for _, item := range items {
-		if item.ID > 0 {
-			seen[item.ID] = true
-		}
-	}
-	return len(seen)
 }
 
 func retryAfter(value string) (time.Duration, bool) {

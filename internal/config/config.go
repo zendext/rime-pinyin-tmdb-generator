@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,20 +40,13 @@ type StoreConfig struct {
 }
 
 type BootstrapConfig struct {
-	Mode               string        `toml:"mode"`
-	Popular            PopularConfig `toml:"popular"`
-	ExportDate         string        `toml:"export_date"`
-	ExportBaseURL      string        `toml:"export_base_url"`
-	RequestInterval    Duration      `toml:"request_interval"`
-	MaxItems           int           `toml:"max_items"`
-	MinPopularity      float64       `toml:"min_popularity"`
-	MovieMinPopularity float64       `toml:"movie_min_popularity"`
-}
-
-type PopularConfig struct {
-	TrendingWeekPages int `toml:"trending_week_pages"`
-	PopularPages      int `toml:"popular_pages"`
-	TopRatedPages     int `toml:"top_rated_pages"`
+	Mode               string   `toml:"mode"`
+	ExportDate         string   `toml:"export_date"`
+	ExportBaseURL      string   `toml:"export_base_url"`
+	RequestInterval    Duration `toml:"request_interval"`
+	MaxItems           int      `toml:"max_items"`
+	MinPopularity      float64  `toml:"min_popularity"`
+	MovieMinPopularity float64  `toml:"movie_min_popularity"`
 }
 
 type RimeConfig struct {
@@ -80,7 +74,6 @@ func Default() Config {
 		},
 		Bootstrap: BootstrapConfig{
 			Mode:               "full",
-			Popular:            PopularConfig{TrendingWeekPages: 5, PopularPages: 10, TopRatedPages: 10},
 			RequestInterval:    Duration(50 * time.Millisecond),
 			MinPopularity:      10,
 			MovieMinPopularity: 15,
@@ -115,6 +108,9 @@ func Load(path string) (Config, error) {
 	applyEnv(&cfg)
 	ApplyModeDefaults(&cfg)
 	expandPaths(&cfg)
+	if err := Validate(&cfg); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
 }
 
@@ -125,6 +121,14 @@ func ApplyModeDefaults(cfg *Config) {
 	if !cfg.Store.MoviePathExplicit {
 		cfg.Store.MoviePath = defaultMovieStorePath()
 	}
+}
+
+func Validate(cfg *Config) error {
+	mode := strings.TrimSpace(cfg.Bootstrap.Mode)
+	if mode == "" || mode == "full" {
+		return nil
+	}
+	return fmt.Errorf("unsupported bootstrap mode %q", mode)
 }
 
 func LoadOverrides(path string) (map[string]string, error) {
@@ -189,11 +193,7 @@ func expandPaths(cfg *Config) {
 func defaultStorePath(mode string) string {
 	stateDir := xdg("XDG_STATE_HOME", filepath.Join(homeDir(), ".local", "state"))
 	baseState := filepath.Join(stateDir, "rime-pinyin-tmdb-generator")
-	mode = strings.TrimSpace(mode)
-	if mode == "full" {
-		return filepath.Join(baseState, "series-full.sqlite")
-	}
-	return filepath.Join(baseState, "series-popular.sqlite")
+	return filepath.Join(baseState, "series-full.sqlite")
 }
 
 func defaultOutputDir(dataDir string) string {
