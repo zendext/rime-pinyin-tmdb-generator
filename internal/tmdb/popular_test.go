@@ -237,12 +237,12 @@ func TestClientPopularBootstrapLogsProgress(t *testing.T) {
 	}
 	out := logs.String()
 	for _, want := range []string{
-		"popular bootstrap start sources=3",
-		"popular list source=/trending/tv/week page=1 items=20",
-		"popular list source=/tv/popular page=1 items=31",
-		"popular bootstrap fetched_items=52 unique_ids=51",
-		"popular translations progress processed=50 total=51",
-		"popular bootstrap completed processed=51 store_series=51",
+		"tmdb.popular.start sources=3",
+		"tmdb.popular.list source=/trending/tv/week page=1 items=20",
+		"tmdb.popular.list source=/tv/popular page=1 items=31",
+		"tmdb.popular.items fetched_items=52 unique_ids=51",
+		"tmdb.popular.translations.progress processed=50 total=51",
+		"tmdb.popular.done processed=51 store_series=51",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected log %q in:\n%s", want, out)

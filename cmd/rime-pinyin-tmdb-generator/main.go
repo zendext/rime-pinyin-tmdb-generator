@@ -198,7 +198,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 		MinPopularity:      cfg.Bootstrap.MinPopularity,
 		MovieMinPopularity: cfg.Bootstrap.MovieMinPopularity,
 		Logf: func(format string, args ...any) {
-			fmt.Fprintf(stdout, format+"\n", args...)
+			fmt.Fprintln(stdout, formatLogLine(fmt.Sprintf(format, args...), time.Now().UTC()))
 		},
 	}
 	ctx := context.Background()
@@ -256,6 +256,20 @@ func splitCSV(value string) []string {
 		}
 	}
 	return out
+}
+
+func formatLogLine(message string, now time.Time) string {
+	message = strings.TrimSpace(message)
+	event := message
+	fields := ""
+	if before, after, ok := strings.Cut(message, " "); ok {
+		event = before
+		fields = after
+	}
+	if fields == "" {
+		return fmt.Sprintf("%s INFO  %s", now.UTC().Format(time.RFC3339), event)
+	}
+	return fmt.Sprintf("%s INFO  %-28s %s", now.UTC().Format(time.RFC3339), event, fields)
 }
 
 func runShell(command string) error {

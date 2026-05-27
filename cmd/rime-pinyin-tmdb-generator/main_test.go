@@ -135,7 +135,18 @@ func TestRunGenerateWritesFullBootstrapLogsToStdout(t *testing.T) {
 	if code == 0 {
 		t.Fatal("expected generate to fail against unreachable test URL")
 	}
-	if !strings.Contains(stdout.String(), "full bootstrap export=05_26_2026 cursor=0 completed=false") {
+	for _, want := range []string{
+		" INFO  tmdb.full.state ",
+		"media=tv",
+		"export=05_26_2026",
+		"cursor=0",
+		"completed=false",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("expected full bootstrap log to include %q, got stdout:\n%s\nstderr:\n%s", want, stdout.String(), stderr.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "full bootstrap export=") {
 		t.Fatalf("expected full bootstrap log on stdout, got stdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
 	}
 }

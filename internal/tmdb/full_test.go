@@ -135,11 +135,11 @@ func TestClientFullBootstrapLogsProgress(t *testing.T) {
 	}
 	out := logs.String()
 	for _, want := range []string{
-		"full bootstrap export=05_26_2026 cursor=0 completed=false",
-		"full bootstrap download export=05_26_2026",
-		"full bootstrap export_stats export=05_26_2026 total=101 fetchable=101 remaining_fetchable=101 skipped=0 adult=0 invalid=0 below_min_popularity=0 min_popularity=0",
-		"full bootstrap progress export=05_26_2026 cursor=100 processed=100",
-		"full bootstrap completed export=05_26_2026 cursor=101 processed=101 skipped=0",
+		"tmdb.full.state media=tv export=05_26_2026 cursor=0 completed=false",
+		"tmdb.full.download media=tv export=05_26_2026",
+		"tmdb.full.stats media=tv export=05_26_2026 total=101 fetchable=101 remaining_fetchable=101 skipped=0 adult=0 invalid=0 below_min_popularity=0 min_popularity=0",
+		"tmdb.full.progress media=tv export=05_26_2026 cursor=100 processed=100 skipped=0",
+		"tmdb.full.done media=tv export=05_26_2026 cursor=101 processed=101 skipped=0",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected log %q in:\n%s", want, out)
@@ -187,8 +187,8 @@ func TestClientFullBootstrapLogsPauseAndSkippedItems(t *testing.T) {
 	}
 	out := logs.String()
 	for _, want := range []string{
-		"full bootstrap skipped export=05_26_2026 cursor=1 skipped=1",
-		"full bootstrap paused export=05_26_2026 cursor=2 processed=1 skipped=1 reason=max_items",
+		"tmdb.full.skipped media=tv export=05_26_2026 cursor=1 skipped=1",
+		"tmdb.full.paused media=tv export=05_26_2026 cursor=2 processed=1 skipped=1 reason=max_items",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected log %q in:\n%s", want, out)
@@ -295,7 +295,7 @@ func TestClientFullBootstrapLogsFetchableItemCounts(t *testing.T) {
 	if _, err := client.FetchSeries(context.Background(), time.Time{}); err != nil {
 		t.Fatal(err)
 	}
-	want := "full bootstrap export_stats export=05_26_2026 total=5 fetchable=2 remaining_fetchable=2 skipped=3 adult=1 invalid=1 below_min_popularity=1 min_popularity=10"
+	want := "tmdb.full.stats media=tv export=05_26_2026 total=5 fetchable=2 remaining_fetchable=2 skipped=3 adult=1 invalid=1 below_min_popularity=1 min_popularity=10"
 	if !strings.Contains(logs.String(), want) {
 		t.Fatalf("expected log %q in:\n%s", want, logs.String())
 	}
@@ -436,7 +436,7 @@ func TestClientFullCompletedBootstrapDiffsDailyExport(t *testing.T) {
 	if !reflect.DeepEqual(paths, wantPaths) {
 		t.Fatalf("unexpected paths: %#v", paths)
 	}
-	if !strings.Contains(logs.String(), "full export diff export=05_26_2026 added=1 removed=2 popularity_updated=1 unchanged=1") {
+	if !strings.Contains(logs.String(), "tmdb.full.diff.done media=tv export=05_26_2026 added=1 removed=2 popularity_updated=1 unchanged=1") {
 		t.Fatalf("missing diff log:\n%s", logs.String())
 	}
 

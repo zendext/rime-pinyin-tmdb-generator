@@ -39,7 +39,10 @@ type Client struct {
 	Logf               func(format string, args ...any)
 }
 
-const skipCursorPersistInterval = 1000
+const (
+	skipCursorPersistInterval = 1000
+	skipLogInterval           = 10000
+)
 
 type PopularSource struct {
 	Path  string
@@ -84,7 +87,7 @@ func (c *Client) fetchPopularBootstrap(ctx context.Context, since time.Time) ([]
 		return nil, err
 	}
 	seen := make(map[int]bool)
-	c.logf("popular bootstrap fetched_items=%d unique_ids=%d", len(items), uniqueItemCount(items))
+	c.logf("tmdb.popular.items fetched_items=%d unique_ids=%d", len(items), uniqueItemCount(items))
 	processed := 0
 	total := uniqueItemCount(items)
 	for _, item := range items {
@@ -108,7 +111,7 @@ func (c *Client) fetchPopularBootstrap(ctx context.Context, since time.Time) ([]
 		}
 		processed++
 		if processed%50 == 0 {
-			c.logf("popular translations progress processed=%d total=%d", processed, total)
+			c.logf("tmdb.popular.translations.progress processed=%d total=%d", processed, total)
 		}
 		c.wait(ctx)
 	}
@@ -116,7 +119,7 @@ func (c *Client) fetchPopularBootstrap(ctx context.Context, since time.Time) ([]
 	if err != nil {
 		return nil, err
 	}
-	c.logf("popular bootstrap completed processed=%d store_series=%d", processed, count)
+	c.logf("tmdb.popular.done processed=%d store_series=%d", processed, count)
 	return c.recordsFromStore(db)
 }
 
@@ -135,7 +138,7 @@ func (c *Client) fetchFullBootstrap(ctx context.Context, since time.Time, spec m
 		return nil, err
 	}
 	if ok {
-		c.logf("full bootstrap export=%s cursor=%d completed=%t", incomplete.ExportDate, incomplete.Cursor, incomplete.Completed)
+		c.logf("tmdb.full.state media=%s export=%s cursor=%d completed=%t", spec.LogMedia, incomplete.ExportDate, incomplete.Cursor, incomplete.Completed)
 		if err := c.consumeExport(ctx, db, incomplete.ExportDate, incomplete.Cursor, spec); err != nil {
 			return nil, err
 		}
@@ -151,7 +154,7 @@ func (c *Client) fetchFullBootstrap(ctx context.Context, since time.Time, spec m
 		if err != nil {
 			return nil, err
 		}
-		c.logf("full bootstrap export=%s cursor=%d completed=%t", exportDate, cursor, completed)
+		c.logf("tmdb.full.state media=%s export=%s cursor=%d completed=%t", spec.LogMedia, exportDate, cursor, completed)
 		if hasCompleted {
 			if err := c.syncExportDiff(ctx, db, exportDate, spec); err != nil {
 				if errors.Is(err, errExportNotFound) && c.ExportDate == "" {
@@ -173,13 +176,14 @@ func (c *Client) fetchFullBootstrap(ctx context.Context, since time.Time, spec m
 }
 
 func (c *Client) consumeExport(ctx context.Context, db *store.DB, exportDate string, cursor int, spec mediaSpec) error {
-	c.logf("full bootstrap download export=%s", exportDate)
+	c.logf("tmdb.full.download media=%s export=%s", spec.LogMedia, exportDate)
 	items, stats, err := c.downloadExportItems(ctx, exportDate, spec)
 	if err != nil {
 		return err
 	}
 	c.logf(
-		"full bootstrap export_stats export=%s total=%d fetchable=%d remaining_fetchable=%d skipped=%d adult=%d invalid=%d below_min_popularity=%d min_popularity=%g",
+		"tmdb.full.stats media=%s export=%s total=%d fetchable=%d remaining_fetchable=%d skipped=%d adult=%d invalid=%d below_min_popularity=%d min_popularity=%g",
+		spec.LogMedia,
 		exportDate,
 		stats.Total,
 		stats.Fetchable,
@@ -208,8 +212,8 @@ func (c *Client) consumeExport(ctx context.Context, db *store.DB, exportDate str
 				}
 				persistedCursor = nextCursor
 			}
-			if skippedItems%100 == 0 || skippedItems == 1 {
-				c.logf("full bootstrap skipped export=%s cursor=%d skipped=%d", exportDate, nextCursor, skippedItems)
+			if skippedItems%skipLogInterval == 0 || skippedItems == 1 {
+				c.logf("tmdb.full.skipped media=%s export=%s cursor=%d skipped=%d", spec.LogMedia, exportDate, nextCursor, skippedItems)
 			}
 			continue
 		}
@@ -220,7 +224,7 @@ func (c *Client) consumeExport(ctx context.Context, db *store.DB, exportDate str
 				}
 				persistedCursor = offset
 			}
-			c.logf("full bootstrap paused export=%s cursor=%d processed=%d skipped=%d reason=max_items", exportDate, persistedCursor, processedItems, skippedItems)
+			c.logf("tmdb.full.paused media=%s export=%s cursor=%d processed=%d skipped=%d reason=max_items", spec.LogMedia, exportDate, persistedCursor, processedItems, skippedItems)
 			return nil
 		}
 		record, err := c.fetchTranslationsByID(ctx, item.ID, spec)
@@ -242,22 +246,23 @@ func (c *Client) consumeExport(ctx context.Context, db *store.DB, exportDate str
 		persistedCursor = nextCursor
 		processedItems++
 		if processedItems%100 == 0 {
-			c.logf("full bootstrap progress export=%s cursor=%d processed=%d", exportDate, nextCursor, processedItems)
+			c.logf("tmdb.full.progress media=%s export=%s cursor=%d processed=%d skipped=%d", spec.LogMedia, exportDate, nextCursor, processedItems, skippedItems)
 		}
 		c.wait(ctx)
 	}
-	c.logf("full bootstrap completed export=%s cursor=%d processed=%d skipped=%d", exportDate, lastCursor, processedItems, skippedItems)
+	c.logf("tmdb.full.done media=%s export=%s cursor=%d processed=%d skipped=%d", spec.LogMedia, exportDate, lastCursor, processedItems, skippedItems)
 	return db.SetBootstrap(exportDate, lastCursor, true)
 }
 
 func (c *Client) syncExportDiff(ctx context.Context, db *store.DB, exportDate string, spec mediaSpec) error {
-	c.logf("full export diff download export=%s", exportDate)
+	c.logf("tmdb.full.diff.download media=%s export=%s", spec.LogMedia, exportDate)
 	items, stats, err := c.downloadExportItems(ctx, exportDate, spec)
 	if err != nil {
 		return err
 	}
 	c.logf(
-		"full bootstrap export_stats export=%s total=%d fetchable=%d remaining_fetchable=%d skipped=%d adult=%d invalid=%d below_min_popularity=%d min_popularity=%g",
+		"tmdb.full.stats media=%s export=%s total=%d fetchable=%d remaining_fetchable=%d skipped=%d adult=%d invalid=%d below_min_popularity=%d min_popularity=%g",
+		spec.LogMedia,
 		exportDate,
 		stats.Total,
 		stats.Fetchable,
@@ -323,7 +328,7 @@ func (c *Client) syncExportDiff(ctx context.Context, db *store.DB, exportDate st
 		}
 		processed++
 		if processed%50 == 0 || processed == len(addedIDs) {
-			c.logf("full translations progress processed=%d total=%d", processed, len(addedIDs))
+			c.logf("tmdb.full.translations.progress media=%s export=%s processed=%d total=%d", spec.LogMedia, exportDate, processed, len(addedIDs))
 		}
 		c.wait(ctx)
 	}
@@ -341,7 +346,8 @@ func (c *Client) syncExportDiff(ctx context.Context, db *store.DB, exportDate st
 		}
 	}
 	c.logf(
-		"full export diff export=%s added=%d removed=%d popularity_updated=%d unchanged=%d",
+		"tmdb.full.diff.done media=%s export=%s added=%d removed=%d popularity_updated=%d unchanged=%d",
+		spec.LogMedia,
 		exportDate,
 		len(addedIDs),
 		len(removedIDs),
@@ -459,6 +465,7 @@ type mediaSpec struct {
 	StorePath        string
 	MinPopularity    float64
 	SkipVideo        bool
+	LogMedia         string
 }
 
 func (c *Client) tvMediaSpec() mediaSpec {
@@ -467,6 +474,7 @@ func (c *Client) tvMediaSpec() mediaSpec {
 		ExportFilePrefix: "tv_series_ids",
 		StorePath:        c.StorePath,
 		MinPopularity:    c.MinPopularity,
+		LogMedia:         "tv",
 	}
 }
 
@@ -477,6 +485,7 @@ func (c *Client) movieMediaSpec() mediaSpec {
 		StorePath:        c.MovieStorePath,
 		MinPopularity:    c.MovieMinPopularity,
 		SkipVideo:        true,
+		LogMedia:         "movie",
 	}
 }
 
@@ -498,7 +507,7 @@ func (c *Client) recordsFromStore(db *store.DB) ([]SeriesRecord, error) {
 
 func (c *Client) fetchCommonListItems(ctx context.Context) ([]seriesAPIRecord, error) {
 	var items []seriesAPIRecord
-	c.logf("popular bootstrap start sources=%d", len(c.PopularSources))
+	c.logf("tmdb.popular.start sources=%d", len(c.PopularSources))
 	for _, source := range c.PopularSources {
 		for page := 1; page <= source.Pages; page++ {
 			q := url.Values{
@@ -509,7 +518,7 @@ func (c *Client) fetchCommonListItems(ctx context.Context) ([]seriesAPIRecord, e
 			if err := c.request(ctx, http.MethodGet, source.Path, q, &resp); err != nil {
 				return nil, err
 			}
-			c.logf("popular list source=%s page=%d items=%d", source.Path, page, len(resp.Results))
+			c.logf("tmdb.popular.list source=%s page=%d items=%d", source.Path, page, len(resp.Results))
 			items = append(items, resp.Results...)
 			if resp.TotalPages > 0 && page >= resp.TotalPages {
 				break
