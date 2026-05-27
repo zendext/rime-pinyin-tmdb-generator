@@ -173,6 +173,12 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 	if strings.Contains(configText, "max_pages") {
 		t.Fatalf("example config should not include max_pages:\n%s", configText)
 	}
+	if !strings.Contains(configText, `dir = "~/.local/share/fcitx5/rime"`) {
+		t.Fatalf("example config should use output dir:\n%s", configText)
+	}
+	if strings.Contains(configText, "dict_path") {
+		t.Fatalf("example config should not include old dict_path:\n%s", configText)
+	}
 	for _, want := range []string{
 		"trending_week_pages = 5",
 		"popular_pages = 10",
@@ -214,6 +220,12 @@ func TestDocsShowSingleDefaultLanguageAndPopularStatus(t *testing.T) {
 	}
 	if strings.Contains(readme, "--max-pages") {
 		t.Fatal("README should not document max-pages for popular defaults")
+	}
+	if !strings.Contains(readme, `dir = "~/.local/share/fcitx5/rime"`) || !strings.Contains(readme, "--output-dir") {
+		t.Fatal("README should document output directory configuration")
+	}
+	if strings.Contains(readme, "dict_path") || strings.Contains(readme, "--output ") {
+		t.Fatal("README should not document old output file path configuration")
 	}
 	for _, want := range []string{
 		"/trending/tv/week`：默认最多 5 页",
