@@ -59,32 +59,18 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           mkdir -p dist
+          asset="${{ matrix.artifact }}_${VERSION}${{ matrix.ext }}"
           go build \
             -trimpath \
             -ldflags="-s -w" \
-            -o "dist/rime-pinyin-tmdb-generator${{ matrix.ext }}" \
+            -o "dist/${asset}" \
             ./cmd/rime-pinyin-tmdb-generator
-
-      - name: Package
-        run: |
-          mkdir -p dist/package
-          cp "dist/rime-pinyin-tmdb-generator${{ matrix.ext }}" dist/package/
-          cp README.md LICENSE NOTICE.md dist/package/
-
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            (cd dist/package && zip -q "../${{ matrix.artifact }}_${VERSION}.zip" ./*)
-          else
-            tar -C dist/package -czf "dist/${{ matrix.artifact }}_${VERSION}.tar.gz" .
-          fi
 
       - name: Checksums
         run: |
           cd dist
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            sha256sum "${{ matrix.artifact }}_${VERSION}.zip" > "${{ matrix.artifact }}_${VERSION}.zip.sha256"
-          else
-            sha256sum "${{ matrix.artifact }}_${VERSION}.tar.gz" > "${{ matrix.artifact }}_${VERSION}.tar.gz.sha256"
-          fi
+          asset="${{ matrix.artifact }}_${VERSION}${{ matrix.ext }}"
+          sha256sum "${asset}" > "${asset}.sha256"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v7

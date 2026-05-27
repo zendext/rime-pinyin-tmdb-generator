@@ -216,8 +216,8 @@ func TestDocsShowSingleDefaultLanguageAndFullStatus(t *testing.T) {
 	if strings.Contains(configText, "[store]") {
 		t.Fatalf("example config should rely on default store path:\n%s", configText)
 	}
-	if !strings.Contains(configText, "mode = \"full\"") {
-		t.Fatalf("example config should default to full mode:\n%s", configText)
+	if strings.Contains(configText, "mode = \"full\"") {
+		t.Fatalf("example config should omit implicit full mode:\n%s", configText)
 	}
 
 	readmeData, err := os.ReadFile("../../README.md")
@@ -228,8 +228,8 @@ func TestDocsShowSingleDefaultLanguageAndFullStatus(t *testing.T) {
 	if !strings.Contains(readme, "languages = [\"zh-CN\"]") {
 		t.Fatal("README should default to one language")
 	}
-	if !strings.Contains(readme, "mode = \"full\"") || !strings.Contains(readme, "`bootstrap.mode = \"full\"` 是默认模式") {
-		t.Fatal("README should document full as the default mode")
+	if strings.Contains(readme, "mode = \"full\"") || strings.Contains(readme, "bootstrap.mode") {
+		t.Fatal("README should not document implicit full mode")
 	}
 	if strings.Contains(readme, "max_pages = 10") {
 		t.Fatal("README default config should not include max_pages")
@@ -264,11 +264,10 @@ func TestDocsShowSingleDefaultLanguageAndFullStatus(t *testing.T) {
 		t.Fatal("README should document full movie_min_popularity filtering")
 	}
 	for _, want := range []string{
-		"流行度阈值",
-		"不要在同一个未完成的 full bootstrap 中途修改",
-		"不会自动回头补抓",
-		"完成后会通过 Daily Export 本地 diff",
-		"低于阈值或消失的条目会从 SQLite store 删除",
+		"不要在同一个未完成的首次 bootstrap 中途调低",
+		"不会回头补抓",
+		"后续 diff 会应用当前阈值",
+		"低于阈值或从 export 消失的条目会被删除",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Fatalf("README should document popularity threshold caveat %q", want)

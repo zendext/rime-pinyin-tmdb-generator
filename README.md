@@ -7,7 +7,13 @@
 
 ## 安装
 
-从源码构建：
+优先从 GitHub Releases 下载对应平台的二进制文件：
+
+```text
+https://github.com/zendext/rime-pinyin-tmdb-generator/releases/latest
+```
+
+也可以从源码构建：
 
 ```sh
 go build -o rime-pinyin-tmdb-generator ./cmd/rime-pinyin-tmdb-generator
@@ -44,7 +50,6 @@ dir = "~/.local/share/fcitx5/rime"
 lock_path = "~/.local/state/rime-pinyin-tmdb-generator/update.lock"
 
 [bootstrap]
-mode = "full"
 request_interval = "50ms"
 min_popularity = 10
 movie_min_popularity = 15
@@ -74,24 +79,18 @@ movie_path = "/path/to/movies.sqlite"
 
 ## Bootstrap
 
-`bootstrap.mode = "full"` 是默认模式，也是唯一支持的模式。它会读取 TMDb Daily ID Export，分别生成 TV 和电影词库：
+程序会读取 TMDb Daily ID Export，生成 TV 和电影词库；默认会尝试今天、昨天和前天的 export，也可以用 `export_date = "05_26_2026"` 固定日期。
 
-- TV：读取 `tv_series_ids_*`，写入 `series-full.sqlite`，生成 `tmdb_full_hans.dict.yaml` / `tmdb_full_hant.dict.yaml`
-- 电影：读取 `movie_ids_*`，写入 `movies-full.sqlite`，生成 `tmdb_movie_hans.dict.yaml` / `tmdb_movie_hant.dict.yaml`
-- 默认会尝试今天、昨天和前天的 export；配置 `export_date = "05_26_2026"` 时只使用指定日期
-
-full 模式会先在本地过滤 Daily Export，再请求 translations：
+生成前会先按流行度和内容类型过滤：
 
 - TV 只保留非成人、有效 ID 且 `popularity >= min_popularity` 的条目，默认 `min_popularity = 10`
 - 电影只保留非成人、有效 ID、非 video movie 且 `popularity >= movie_min_popularity` 的条目，默认 `movie_min_popularity = 15`
-- 通过过滤后，TV 请求 `/tv/{id}/translations`，电影请求 `/movie/{id}/translations`
-- 一次 translations 请求会返回所有配置语言的翻译，所以配置多个语言不会让请求数成倍增加
 
 `request_interval = "50ms"` 表示 translations 请求之间至少间隔 50ms；`50ms` 等于 20 rps。
 
-首次 bootstrap 遇到中断或 429 后，下次运行会从 SQLite store 里保存的 cursor 继续。首次 bootstrap 完成后，后续运行会重新下载最新可用 Daily Export，并和本地 store 做 diff：新增且达标的 ID 才会请求 translations；已存在的 ID 只更新 popularity；低于阈值、成人、无效、movie video 或从 export 消失的条目会从对应 store 删除。
+首次 bootstrap 支持断点续传；完成后，后续运行会重新下载最新 export 并和本地 store 做 diff，只为新增且达标的 ID 请求 translations，已存在条目只更新 popularity，低于阈值或从 export 消失的条目会被删除。
 
-流行度阈值只在 full 扫描 Daily Export 时生效。断点续传保存的是 export 文件的 cursor，不会保存当时的 `min_popularity` 或 `movie_min_popularity`，所以不要在同一个未完成的 full bootstrap 中途修改这些值：调低阈值不会自动回头补抓之前已跳过的条目。首次 bootstrap 完成后会通过 Daily Export 本地 diff 应用当前阈值，低于阈值或消失的条目会从 SQLite store 删除。
+不要在同一个未完成的首次 bootstrap 中途调低 `min_popularity` 或 `movie_min_popularity`：断点续传不会回头补抓之前已跳过的条目。首次 bootstrap 完成后，后续 diff 会应用当前阈值。
 
 可以用 `status` 查看本地状态：
 
@@ -181,15 +180,23 @@ entries:
 
 用户修正会优先生效，覆盖自动拼音。
 
-## 定时更新
+## 更新词典
 
-`systemd/` 目录包含 user service 和每天运行一次的 timer 模板。复制到 `~/.config/systemd/user/` 后启用 timer：
+隔一段时间后再次运行 `generate` 即可增量更新：
+
+```sh
+rime-pinyin-tmdb-generator generate
+```
+
+首次 bootstrap 完成后，程序会下载最新 Daily Export，和本地 SQLite store 做 diff，只抓取新增且达标条目的 translations，并更新已有条目的 popularity。生成成功后，新的词典文件会覆盖旧文件。
+
+Linux 用户如果想自动每天更新，可以使用 `systemd/` 目录里的 user service 和 timer 模板。复制到 `~/.config/systemd/user/` 后启用 timer：
 
 ```sh
 systemctl --user enable --now rime-pinyin-tmdb-generator-update.timer
 ```
 
-先手动运行 `generate` 并确认命令成功返回，再检查 `status` 显示 `timer_ready=true`，然后启用 timer。
+启用 timer 前，建议先手动运行 `generate` 并确认命令成功返回，再检查 `status` 显示 `timer_ready=true`。
 
 如果使用 systemd 运行，建议直接在 `config.toml` 中配置 `api_key`，或通过 systemd user override 提供 `TMDB_API_KEY`。
 
